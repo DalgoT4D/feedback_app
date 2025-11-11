@@ -24,9 +24,7 @@ pending_reviews = get_pending_reviews_for_user(user_id)
 
 if not pending_reviews:
     st.info("🎉 No pending feedback requests.")
-    if st.button("← Back to My Reviews"):
-        st.switch_page("screens/employee/my_reviews.py")
-    st.stop()
+            st.switch_page("pages/my_reviews.py")    st.stop()
 
 # Check if a specific review was selected
 selected_review_id = st.session_state.get('selected_review_id')
@@ -123,7 +121,7 @@ if selected_idx is not None:
         
         with col3:
             if st.form_submit_button("← Back to Reviews"):
-                st.switch_page("screens/employee/my_reviews.py")
+                st.switch_page("pages/my_reviews.py")
         
         if save_draft:
             success_count = 0

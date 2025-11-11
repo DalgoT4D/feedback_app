@@ -6,17 +6,21 @@ from services.db_helper import (
     get_anonymized_feedback_for_user, 
     get_feedback_progress_for_user,
     generate_feedback_excel_data,
-    get_active_review_cycle
+    get_active_review_cycle,
+    get_all_cycles,
+    get_feedback_by_cycle
 )
 
-st.title("My Feedback Results")
+st.title("Current Feedback Results")
 
 # Check if there's an active review cycle
 active_cycle = get_active_review_cycle()
-if not active_cycle:
-    st.warning("⚠️ No active review cycle found. Historical data shown below may be from previous cycles.")
+
+if active_cycle:
+    st.info(f"**Active Cycle:** {active_cycle['cycle_display_name'] or active_cycle['cycle_name']} | **Feedback Deadline:** {active_cycle['feedback_deadline']}")
 else:
-    st.info(f"**Active Cycle:** {active_cycle['cycle_name']} | **Feedback Deadline:** {active_cycle['feedback_deadline']}")
+    st.warning("No active review cycle found.")
+    st.stop()
 
 user_id = st.session_state["user_data"]["user_type_id"]
 
@@ -36,7 +40,7 @@ with col3:
 if progress['completed_requests'] > 0:
     st.subheader("Export Your Feedback")
     
-    if st.button("📥 Download My Feedback (Excel)", type="primary"):
+    if st.button("Download My Feedback (Excel)", type="primary"):
         excel_data = generate_feedback_excel_data(user_id)
         
         if excel_data:
@@ -64,7 +68,7 @@ if progress['completed_requests'] > 0:
             output.seek(0)
             
             st.download_button(
-                label="📥 Download Excel File",
+                label="Download Excel File",
                 data=output.getvalue(),
                 file_name=f"my_feedback_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -76,10 +80,10 @@ feedback_data = get_anonymized_feedback_for_user(user_id)
 
 if feedback_data:
     st.subheader("Feedback Results (Anonymized)")
-    st.info("🔒 All feedback is anonymized - you cannot see who provided each review.")
+    st.info("All feedback is anonymized - you cannot see who provided each review.")
     
     for i, (request_id, feedback) in enumerate(feedback_data.items(), 1):
-        with st.expander(f"📝 Review #{i} - {feedback['relationship_type'].replace('_', ' ').title()}", expanded=False):
+        with st.expander(f"Review #{i} - {feedback['relationship_type'].replace('_', ' ').title()}", expanded=False):
             st.write(f"**Completed:** {feedback['completed_at']}")
             st.write(f"**Reviewer Type:** {feedback['relationship_type'].replace('_', ' ').title()}")
             
@@ -90,22 +94,22 @@ if feedback_data:
                 
                 if response['question_type'] == 'rating':
                     rating = response['rating_value']
-                    stars = "⭐" * rating + "☆" * (5 - rating)
+                    stars = "*" * rating + "-" * (5 - rating)
                     st.write(f"{stars} ({rating}/5)")
                 else:
                     if response['response_value']:
-                        st.write(f"💬 {response['response_value']}")
+                        st.write(f"Response: {response['response_value']}")
                     else:
                         st.write("*No response provided*")
                 
                 st.write("")
 else:
     if progress['total_requests'] == 0:
-        st.info("🎯 You haven't requested any feedback yet. Use the 'Request Feedback' page to get started!")
+        st.info("You haven't requested any feedback yet. Use the 'Request Feedback' page to get started!")
     elif progress['awaiting_approval'] > 0:
-        st.info("⏳ Your feedback requests are awaiting manager approval.")
+        st.info("Your feedback requests are awaiting manager approval.")
     elif progress['pending_requests'] > 0:
-        st.info("📝 Your feedback requests have been approved and sent to reviewers. Results will appear here once completed.")
+        st.info("Your feedback requests have been approved and sent to reviewers. Results will appear here once completed.")
     else:
         st.info("📭 No feedback results available yet.")
 
@@ -120,4 +124,4 @@ st.write("""
 """)
 
 if progress['pending_requests'] > 0:
-    st.info(f"💌 You have {progress['pending_requests']} pending responses. You can send anonymous reminders from the 'Reviews to Complete' page.")
+    st.info(f"You have {progress['pending_requests']} pending responses. You can send anonymous reminders from the 'Reviews to Complete' page.")

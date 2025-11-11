@@ -130,18 +130,7 @@ with st.expander("📝 Email Template Preview"):
     Thank you!
     """)
 
-# Additional tools
-st.subheader("Additional Tools")
 
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("📊 View Dashboard"):
-        st.switch_page("screens/hr/dashboard.py")
-
-with col2:
-    if st.button("👥 Manage Employees"):
-        st.switch_page("screens/hr/manage_employees.py")
 
 # Tips and best practices
 with st.expander("💡 Best Practices for Reminders"):

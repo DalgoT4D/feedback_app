@@ -3,7 +3,7 @@ from services.db_helper import get_connection
 
 st.title("System Settings")
 
-st.info("⚙️ System configuration and maintenance")
+st.info("System configuration and maintenance")
 
 # Review cycle configuration
 st.subheader("Review Cycle Configuration")
@@ -36,7 +36,7 @@ for q in questions:
 
 # Display questions by type
 for rel_type, rel_questions in question_groups.items():
-    with st.expander(f"📝 Questions for {rel_type.replace('_', ' ').title()}"):
+    with st.expander(f"[Questions] Questions for {rel_type.replace('_', ' ').title()}"):
         for q in rel_questions:
             question_id = q[0]
             question_text = q[1]
@@ -47,7 +47,7 @@ for rel_type, rel_questions in question_groups.items():
             col1, col2, col3 = st.columns([4, 1, 1])
             
             with col1:
-                status = "✅" if is_active else "❌"
+                status = "[Active]" if is_active else "[Inactive]"
                 st.write(f"{status} **{sort_order}.** {question_text}")
                 st.write(f"*Type: {question_type}*")
             
@@ -123,10 +123,9 @@ with st.form("add_question_form"):
             """
             conn.execute(insert_query, (new_question_text, new_question_type, new_relationship_type, new_sort_order))
             conn.commit()
-            st.success("✅ Question added successfully!")
-            st.rerun()
+            st.success("[Active] Question added successfully!")
         else:
-            st.error("❌ Please enter question text")
+            st.error("[Inactive] Please enter question text")
 
 st.divider()
 
@@ -136,12 +135,12 @@ st.subheader("Email Configuration")
 email_config_exists = "email" in st.secrets
 
 if email_config_exists:
-    st.success("✅ Email configuration found in secrets")
+    st.success("[Active] Email configuration found in secrets")
     st.write("**SMTP Server:** smtp.gmail.com")
     st.write("**Port:** 587")
     st.write("**Authentication:** Configured")
 else:
-    st.warning("⚠️ Email configuration not found")
+    st.warning("[Warning] Email configuration not found")
     st.write("Add email configuration to `.streamlit/secrets.toml`:")
     st.code("""
 [email]
@@ -156,14 +155,14 @@ if email_config_exists:
     st.subheader("Test Email")
     with st.form("test_email_form"):
         test_email = st.text_input("Send test email to:")
-        send_test = st.form_submit_button("📧 Send Test Email")
+        send_test = st.form_submit_button("[Send] Send Test Email")
         
         if send_test and test_email:
             from services.email_service import send_email
             if send_email(test_email, "Test Email", "This is a test email from the 360 Feedback System."):
-                st.success("✅ Test email sent successfully!")
+                st.success("[Active] Test email sent successfully!")
             else:
-                st.error("❌ Failed to send test email")
+                st.error("[Inactive] Failed to send test email")
 
 st.divider()
 
@@ -192,35 +191,13 @@ with col1:
         st.error(f"Error fetching statistics: {e}")
 
 with col2:
-    st.write("**Quick Actions**")
-    if st.button("🔄 Refresh Data"):
-        st.rerun()
-    
-    if st.button("📊 View Logs"):
-        # Show recent email logs
-        try:
-            logs = conn.execute("""
-                SELECT email_type, status, sent_at 
-                FROM email_logs 
-                ORDER BY sent_at DESC 
-                LIMIT 10
-            """).fetchall()
-            
-            if logs:
-                st.write("**Recent Email Activity:**")
-                for log in logs:
-                    st.write(f"• {log[0]} - {log[1]} - {log[2][:16]}")
-            else:
-                st.write("No recent email activity")
-        except:
-            st.write("Email logs not available")
-
+    # Quick Actions removed - use navigation menu
 st.divider()
 
 # Application settings
 st.subheader("Application Settings")
 
-with st.expander("🔧 Advanced Settings"):
+with st.expander("[Advanced] Advanced Settings"):
     st.write("**Nomination Limits:**")
     st.write("• Maximum nominations per person: 4")
     st.write("• Minimum reviewers required: 3")
@@ -256,7 +233,7 @@ with col2:
 # Export system configuration
 st.subheader("System Backup")
 
-if st.button("📥 Export Configuration"):
+if st.button("[Export] Export Configuration"):
     # Export key configuration data
     config_data = {
         "questions": questions,
@@ -265,6 +242,6 @@ if st.button("📥 Export Configuration"):
     }
     
     st.json(config_data)
-    st.info("💾 Configuration data displayed above. Copy for backup purposes.")
+    st.info("[Config] Configuration data displayed above. Copy for backup purposes.")
 
-st.info("💡 **Note:** System settings changes may require administrator privileges and application restart.")
+st.info("[Note] **Note:** System settings changes may require administrator privileges and application restart.")
