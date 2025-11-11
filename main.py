@@ -31,14 +31,27 @@ st.markdown(
     top: 60px !important; /* Push it down below the fixed header */
 }
 
-/* Main title styling */
-h1 {
-    color: #1E4796; /* Blue for page titles */
+/* Main title styling - more specific selectors for Streamlit Cloud */
+.main h1, [data-testid="stMarkdownContainer"] h1, .stMarkdown h1 {
+    color: #1E4796 !important; /* Blue for page titles */
 }
 
-/* Subheader styling */
-h2, h3, h4 {
-    color: #E55325; /* Orange for subheadings */
+/* Subheader styling - more specific selectors for Streamlit Cloud */
+.main h2, [data-testid="stMarkdownContainer"] h2, .stMarkdown h2,
+.main h3, [data-testid="stMarkdownContainer"] h3, .stMarkdown h3,
+.main h4, [data-testid="stMarkdownContainer"] h4, .stMarkdown h4 {
+    color: #E55325 !important; /* Orange for subheadings */
+}
+
+/* Also target streamlit's title element */
+[data-testid="element-container"] h1 {
+    color: #1E4796 !important;
+}
+
+[data-testid="element-container"] h2,
+[data-testid="element-container"] h3, 
+[data-testid="element-container"] h4 {
+    color: #E55325 !important;
 }
 
 /* Button primary color */
