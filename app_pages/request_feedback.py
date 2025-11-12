@@ -381,7 +381,6 @@ else:
             st.info(
                 "Your new requests have been sent to your manager for approval. You will be notified once they are processed."
             )
-            st.balloons()
             st.rerun()
         else:
             st.error(f"Error submitting requests: {message}")

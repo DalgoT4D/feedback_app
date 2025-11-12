@@ -61,7 +61,6 @@ else:
                     f"[Decline] Decline", key=f"decline_{request['request_id']}"
                 ):
                     st.session_state[f"show_decline_{request['request_id']}"] = True
-                    st.rerun()
 
             # Show decline reason form if user clicked decline
             if st.session_state.get(f"show_decline_{request['request_id']}", False):

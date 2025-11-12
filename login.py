@@ -426,7 +426,6 @@ if not st.session_state["authenticated"]:
                             # Clear reset state and go back to login
                             st.session_state["show_password_reset"] = False
                             st.session_state["email_entered"] = False
-                            st.balloons()
                             st.rerun()
                         else:
                             st.error(message)

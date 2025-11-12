@@ -147,6 +147,11 @@ if st.session_state.get("show_cycle_form", False):
                     if success:
                         st.success(f"Review cycle created successfully (ID {info})!")
                         st.session_state.show_cycle_form = False
+                        # Clear any cached data
+                        if hasattr(st.session_state, 'active_cycle_cache'):
+                            del st.session_state.active_cycle_cache
+                        # Temporarily disable badges during rerun to avoid conflicts
+                        st.session_state.temp_disable_badges = True
                         st.rerun()
                     else:
                         st.error(f"Error creating cycle: {info}")
@@ -157,7 +162,6 @@ if st.session_state.get("show_cycle_form", False):
 
         if cancel_cycle:
             st.session_state.show_cycle_form = False
-            st.rerun()
 
 # Complete cycle form
 if st.session_state.get("show_complete_form", False):
@@ -193,6 +197,7 @@ if st.session_state.get("show_complete_form", False):
                 if success:
                     st.success("Cycle marked as complete!")
                     st.session_state.show_complete_form = False
+                    # Single rerun to reflect completed status and enable new cycle creation
                     st.rerun()
                 else:
                     st.error(f"Error marking cycle complete: {message}")
@@ -201,7 +206,6 @@ if st.session_state.get("show_complete_form", False):
 
         if cancel_complete:
             st.session_state.show_complete_form = False
-            st.rerun()
 
 
 if active_cycle:  # Wrap the entire section

@@ -78,6 +78,7 @@ else:
                                 request_id, user_id, "approve"
                             ):
                                 st.success("[Success] Request approved!")
+                                # Refresh list to remove the approved item
                                 st.rerun()
                             else:
                                 st.error("[Error] Error approving request.")
@@ -113,6 +114,7 @@ else:
                                         st.session_state[
                                             f"show_reject_form_{request_id}"
                                         ] = False
+                                        # Refresh list to remove the rejected item
                                         st.rerun()
                                     else:
                                         st.error("[Error] Error rejecting request.")
@@ -120,10 +122,7 @@ else:
                                     st.error("Please provide a reason for rejection.")
 
                             if cancel_rejection:
-                                st.session_state[f"show_reject_form_{request_id}"] = (
-                                    False
-                                )
-                                st.rerun()
+                                st.session_state[f"show_reject_form_{request_id}"] = False
 
                 st.divider()
 

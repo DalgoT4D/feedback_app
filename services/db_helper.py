@@ -34,6 +34,91 @@ def get_connection():
         _connection = libsql.connect(database=db_url, auth_token=auth_token)
     return _connection
 
+def create_email_queue_table():
+    """Create email queue table if it doesn't exist."""
+    conn = get_connection()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS email_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                to_email TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                html_body TEXT NOT NULL,
+                text_body TEXT,
+                email_type TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'pending',
+                attempts INTEGER DEFAULT 0,
+                last_attempt TIMESTAMP,
+                error_message TEXT
+            )
+        """)
+        conn.commit()
+        logger.info("Email queue table created successfully")
+    except Exception as e:
+        logger.error(f"Error creating email queue table: {e}")
+        raise
+
+def queue_email(to_email: str, subject: str, html_body: str, text_body: str = None, email_type: str = "general"):
+    """Add email to queue for background processing."""
+    conn = get_connection()
+    try:
+        conn.execute("""
+            INSERT INTO email_queue (to_email, subject, html_body, text_body, email_type)
+            VALUES (?, ?, ?, ?, ?)
+        """, (to_email, subject, html_body, text_body, email_type))
+        conn.commit()
+        logger.info(f"Email queued for {to_email} - type: {email_type}")
+        return True
+    except Exception as e:
+        logger.error(f"Error queueing email: {e}")
+        return False
+
+def get_pending_emails():
+    """Get pending emails from queue."""
+    conn = get_connection()
+    try:
+        result = conn.execute("""
+            SELECT id, to_email, subject, html_body, text_body, email_type, attempts
+            FROM email_queue 
+            WHERE status = 'pending' AND attempts < 3
+            ORDER BY created_at ASC
+            LIMIT 10
+        """)
+        return result.fetchall()
+    except Exception as e:
+        logger.error(f"Error fetching pending emails: {e}")
+        return []
+
+def mark_email_sent(email_id: int):
+    """Mark email as successfully sent."""
+    conn = get_connection()
+    try:
+        conn.execute("""
+            UPDATE email_queue 
+            SET status = 'sent', last_attempt = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (email_id,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error marking email as sent: {e}")
+
+def mark_email_failed(email_id: int, error_message: str):
+    """Mark email as failed and increment attempts."""
+    conn = get_connection()
+    try:
+        conn.execute("""
+            UPDATE email_queue 
+            SET attempts = attempts + 1, 
+                last_attempt = CURRENT_TIMESTAMP,
+                error_message = ?,
+                status = CASE WHEN attempts >= 2 THEN 'failed' ELSE 'pending' END
+            WHERE id = ?
+        """, (error_message, email_id))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error marking email as failed: {e}")
+
 def fetch_user_by_email(email):
     """Fetch user by email for authentication."""
     conn = get_connection()
@@ -1498,8 +1583,9 @@ def create_feedback_request_fixed(requester_id, reviewer_data):
 
         conn.commit()
 
-        # Email manager with summary
+        # Email manager with summary (fire-and-forget to avoid UI blocking)
         try:
+            import threading
             mgr_row = conn.execute(
                 """
                 SELECT m.email, m.first_name, m.last_name
@@ -1527,9 +1613,20 @@ def create_feedback_request_fixed(requester_id, reviewer_data):
                             nominees.append({"reviewer_name": f"{nm[0]} {nm[1]}", "relationship_type": relationship_type})
                     else:
                         nominees.append({"reviewer_name": reviewer_id, "relationship_type": relationship_type})
-                send_manager_approval_request(manager_email_send, manager_name, requester_name, nominees, active_cycle["cycle_name"])
+
+                # Send manager approval email immediately (emails are now queued)
+                try:
+                    send_manager_approval_request(
+                        manager_email_send,
+                        manager_name,
+                        requester_name,
+                        nominees,
+                        active_cycle["cycle_name"],
+                    )
+                except Exception as e:
+                    print(f"Warning: Failed to send manager approval email: {e}")
         except Exception as e:
-            print(f"Warning: Failed to send manager approval email: {e}")
+            print(f"Warning: Preparing manager approval email failed: {e}")
 
         return True, "Feedback requests created successfully"
     except Exception as e:
@@ -1552,9 +1649,8 @@ def approve_reject_feedback_request(request_id, manager_id, action, rejection_re
                 """,
                 (manager_id, request_id),
             )
-            # If external, process token+invite via existing pipeline
+            # Process external stakeholder invitations immediately (emails are now queued)
             try:
-                from services.db_helper import process_external_stakeholder_invitations
                 process_external_stakeholder_invitations(request_id)
             except Exception:
                 pass
@@ -1935,7 +2031,7 @@ def get_users_progress_summary():
                                   AND m.user_type_id IS NOT NULL THEN fr_requested.request_id END) as manager_approved_count,
                 COUNT(DISTINCT CASE WHEN fr_requested.reviewer_status = 'accepted' THEN fr_requested.request_id END) as respondent_approved_count,
                 COUNT(DISTINCT fr_assigned.request_id) as assigned_feedback_count,
-                COUNT(DISTINCT CASE WHEN fr_assigned.status = 'completed' THEN fr_assigned.request_id END) as completed_feedback_count
+                COUNT(DISTINCT CASE WHEN fr_assigned.workflow_state = 'completed' THEN fr_assigned.request_id END) as completed_feedback_count
             FROM users u
             LEFT JOIN feedback_requests fr_requested ON u.user_type_id = fr_requested.requester_id 
                 AND fr_requested.cycle_id = ?

@@ -139,7 +139,7 @@ def _send_email_smtp(to_email: str, subject: str, html_body: str, text_body: Opt
 
 def send_email(to_email: str, subject: str, html_body: str, text_body: Optional[str] = None, email_type: str = "general") -> bool:
     """
-    Send email using SendGrid API with error handling and logging.
+    Queue email for background processing to avoid blocking UI.
     
     Args:
         to_email: Recipient email address
@@ -149,18 +149,34 @@ def send_email(to_email: str, subject: str, html_body: str, text_body: Optional[
         email_type: Type of email for logging purposes
         
     Returns:
-        bool: True if email sent successfully, False otherwise
+        bool: True if email queued successfully, False otherwise
     """
-    # TEMPORARY: testing whitelist guard
+    from services.db_helper import queue_email
+    
+    # Queue the email for background processing
+    success = queue_email(to_email, subject, html_body, text_body, email_type)
+    
+    if success:
+        logger.info(f"[EMAIL-QUEUED] Email queued for {to_email} - type: {email_type}")
+    else:
+        logger.error(f"[EMAIL-QUEUE-FAILED] Failed to queue email for {to_email}")
+    
+    return success
+
+def _send_email_sync(to_email: str, subject: str, html_body: str, text_body: Optional[str] = None, email_type: str = "general"):
+    """
+    Synchronously send email - used by background worker only.
+    
+    Returns:
+        tuple: (success: bool, error_message: str)
+    """
     try:
+        # TEMPORARY: testing whitelist guard
         recipient = (to_email or "").strip().lower()
         if TEMP_EMAIL_WHITELIST_ACTIVE and recipient not in TEMP_EMAIL_WHITELIST:
             logger.info(f"[TEMP-WHITELIST] Skipping email to {to_email} for type '{email_type}'")
-            try:
-                log_email_sent(to_email, subject, email_type, True, "skipped_by_whitelist")
-            except Exception:
-                pass
-            return True  # simulate success while not sending
+            log_email_sent(to_email, subject, email_type, True, "skipped_by_whitelist")
+            return True, "skipped_by_whitelist"
     except Exception as e:
         logger.warning(f"Whitelist check failed: {e}")
 
@@ -170,43 +186,40 @@ def send_email(to_email: str, subject: str, html_body: str, text_body: Optional[
         ok = _send_email_smtp(to_email, subject, html_body, text_body)
         if ok:
             log_email_sent(to_email, subject, email_type, True)
-            return True
-        # If SMTP fails, fall through to SendGrid client (if available)
+            return True, "sent_via_smtp"
 
     sg_client = get_sendgrid_client()
     if not sg_client:
-        logger.warning(f"Email client not available - email not sent to {to_email}")
-        log_email_sent(to_email, subject, email_type, False, "No email client available")
-        return False
-    
+        error_msg = "Email client not available"
+        logger.warning(f"{error_msg} - email not sent to {to_email}")
+        log_email_sent(to_email, subject, email_type, False, error_msg)
+        return False, error_msg
+
     try:
         from_email = Email(get_sender_email())
         to_email_obj = To(to_email)
-        
-        # Create mail object
+
         if text_body:
             mail = Mail(from_email, to_email_obj, subject, Content("text/plain", text_body))
             mail.add_content(Content("text/html", html_body))
         else:
             mail = Mail(from_email, to_email_obj, subject, Content("text/html", html_body))
-        
-        # Send email
+
         response = sg_client.send(mail)
-        
         if response.status_code in [200, 202]:
             logger.info(f"Email sent successfully to {to_email} - Status: {response.status_code}")
             log_email_sent(to_email, subject, email_type, True)
-            return True
+            return True, f"sent_via_sendgrid_status_{response.status_code}"
         else:
+            error_msg = f"Status: {response.status_code}"
             logger.warning(f"Email send failed - Status: {response.status_code}, Response: {response.body}")
-            log_email_sent(to_email, subject, email_type, False, f"Status: {response.status_code}")
-            return False
-            
+            log_email_sent(to_email, subject, email_type, False, error_msg)
+            return False, error_msg
     except Exception as e:
         error_msg = f"Exception sending email: {str(e)}"
         logger.error(error_msg)
         log_email_sent(to_email, subject, email_type, False, error_msg)
-        return False
+        return False, error_msg
 
 def send_external_stakeholder_invite(external_email: str, requester_name: str, requester_designation: str, 
                                    cycle_name: str, token: str, feedback_deadline: str, 

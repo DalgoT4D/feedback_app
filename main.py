@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
-import base64  # Import base64
 import json
+import base64  # Import base64
 from pathlib import Path
 from services.db_helper import (
     get_manager_level_from_designation,
@@ -146,47 +146,106 @@ a, [data-testid="baseButton-secondary"] {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Sidebar navigation badges */
-[data-testid="stSidebarNav"] [data-testid="stSidebarNavLink"] span.nav-label--with-badge {
-    display: inline-flex !important;
-    align-items: center;
-    gap: 0.35rem;
+/* Create orange dot using CSS background on navigation items with bullets */
+/* This uses a more direct approach - target all sidebar navigation and use regex-like CSS */
+
+/* Method 1: Use attribute selectors to target links containing bullet character */
+[data-testid="stSidebar"] a[href][title*="•"] {
+    position: relative;
 }
 
-[data-testid="stSidebarNav"] .nav-label__text {
-    display: inline;
-    transition: font-weight 0.15s ease;
-}
-
-[data-testid="stSidebarNav"] [data-testid="stSidebarNavLink"][aria-current="page"] .nav-label__text {
-    font-weight: 600;
-}
-
-[data-testid="stSidebarNav"] .nav-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.8rem;
-    color: #E55325 !important;
-    line-height: 1;
-    margin-left: 0.35rem;
-}
-
-[data-testid="stSidebarNav"] .nav-badge__dot {
-    display: inline-block;
-    width: 0.45rem;
-    height: 0.45rem;
-    border-radius: 50%;
+[data-testid="stSidebar"] a[href][title*="•"]::after {
+    content: '';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
     background-color: #E55325;
-    flex-shrink: 0;
+    border-radius: 50%;
+    z-index: 10;
 }
 
-[data-testid="stSidebarNav"] .nav-badge__count {
-    color: #E55325 !important;
-    font-weight: 600;
-    font-size: 0.8rem;
-    line-height: 1;
+/* Method 2: Global text replacement using CSS */
+/* Replace bullets with orange ones using text-shadow */
+[data-testid="stSidebar"] {
+    --badge-color: #E55325;
 }
+
+/* Method 3: Use text-decoration and pseudo-elements to overlay orange dots */
+[data-testid="stSidebar"] a[href*="bullet-indicator"] {
+    color: #E55325 !important;
+}
+
+/* Force orange color on bullet spans with maximum specificity */
+[data-testid="stSidebar"] span[style*="color: #E55325"] {
+    color: #E55325 !important;
+    font-weight: bold !important;
+}
+
+/* Override all navigation text color specifically for bullets */
+[data-testid="stSidebar"] [data-testid="stSidebarNavLink"] span[style*="#E55325"] {
+    color: #E55325 !important;
+}
+
+/* Nuclear option - target any span containing bullet character */
+span:has-text("•") {
+    color: #E55325 !important;
+}
+
+/* Most specific selector for Streamlit navigation bullets */
+[data-testid="stSidebar"] [data-testid="stSidebarNavLink"] span {
+    color: inherit;
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarNavLink"] span[style] {
+    color: #E55325 !important;
+}
+
+/* Class-based approach for maximum compatibility */
+.orange-bullet {
+    color: #E55325 !important;
+    font-weight: bold !important;
+}
+
+/* Ultra-specific selector for orange bullets */
+[data-testid="stSidebar"] .orange-bullet {
+    color: #E55325 !important;
+    font-weight: bold !important;
+}
+
+/* Override any inherited colors */
+[data-testid="stSidebar"] span.orange-bullet {
+    color: #E55325 !important;
+    font-weight: bold !important;
+}
+
+/* Try to target the special bracket characters */
+[data-testid="stSidebar"] a[href*="⟨"] {
+    color: inherit;
+    position: relative;
+}
+
+[data-testid="stSidebar"] a[href*="⟨"]::after {
+    content: attr(title);
+    position: absolute;
+    color: #E55325;
+    font-weight: bold;
+}
+
+/* Alternative - try CSS text replacement */
+[data-testid="stSidebar"] {
+    --badge-color: #E55325;
+    color: var(--badge-color);
+}
+
+/* Use advanced CSS selectors to target badge text */
+[data-testid="stSidebar"] [data-testid="stSidebarNavLink"]:contains("⟨") {
+    color: #E55325 !important;
+}
+
+/* Clean badge styling - no special formatting needed */
 
 </style>
 """,
@@ -208,13 +267,7 @@ if st.session_state.get("authenticated"):  # Only show header if authenticated
     )
 
 
-def logout():
-    """Logs the user out and redirects to the login page."""
-    st.session_state["authenticated"] = False
-    st.session_state["email"] = None
-    st.session_state["user_data"] = None
-    st.session_state["user_roles"] = []
-    st.rerun()
+# Logout functionality moved to logout.py
 
 
 def has_role(role_name):
@@ -237,7 +290,7 @@ pages = {
         title="External Feedback",
         icon=":material/rate_review:",
     ),
-    "Logout": st.Page(logout, title="Log out", icon=":material/logout:"),
+    "Logout": st.Page("logout.py", title="Log out", icon=":material/logout:"),
 }
 
 # Role-based sections
@@ -268,15 +321,17 @@ BADGES_ENABLED = False  # Temporarily disable badges to isolate navigation issue
 BADGES_ENABLED = True  # Re-enable lightweight badges in native sidebar
 
 def _badge_title(title: str, notifications: set, counts: dict) -> str:
-    """Append a simple bullet to the title when there's a notification.
-    Uses native st.navigation (no external components) to avoid jitter.
+    """Append badge using orange diamond - CSS will make text bold and italic.
     """
     if not BADGES_ENABLED:
         return title
     count = counts.get(title, 0)
     if count > 0:
-        # Fallback text for badge counts; visual badge handled via injected JS/CSS
-        return f"{title} ({count})"
+        # Use orange diamond with clean parentheses - CSS will style the whole link
+        return f"{title} 🔸 ({count})"
+    if title in notifications:
+        # Just the orange diamond for notifications without count
+        return f"{title} 🔸"
     return title
 
 
@@ -532,206 +587,6 @@ if st.session_state["authenticated"]:
 
     # Render built-in sidebar navigation for stability
     pg = st.navigation(nav_sections, position="sidebar")
-    if BADGES_ENABLED:
-        badge_counts_payload = json.dumps(badge_counts)
-        dot_only_payload = json.dumps(
-            sorted(list(notes_set - set(badge_counts.keys())))
-        )
-
-
-        components.html(
-            f"""
-            <script>
-            (function() {{
-                const badgeCounts = {badge_counts_payload};
-                const dotOnlyTitles = new Set({dot_only_payload});
-                const navSelector = '[data-testid="stSidebarNav"]';
-                const navLinkSelector = '[data-testid="stSidebarNavLink"]';
-                const LABEL_CONTAINER_CLASS = 'nav-label__container';
-                const LABEL_WITH_BADGE_CLASS = 'nav-label--with-badge';
-                const ICON_CLASS_HINTS = ['material-icons', 'material-symbols'];
-                const digitOnly = /^[0-9]+$/;
-
-                function isIconElement(el) {{
-                    if (!el) {{
-                        return false;
-                    }}
-                    const classAttr = typeof el.className === 'string' ? el.className : (el.getAttribute && el.getAttribute('class')) || '';
-                    if (classAttr && ICON_CLASS_HINTS.some(fragment => classAttr.includes(fragment))) {{
-                        return true;
-                    }}
-                    const ariaHidden = el.getAttribute && el.getAttribute('aria-hidden');
-                    return ariaHidden === 'true';
-                }}
-
-                function extractTitle(raw) {{
-                    if (!raw) {{
-                        return '';
-                    }}
-                    const trimmed = raw.trim();
-                    const openIdx = trimmed.lastIndexOf('(');
-                    if (openIdx === -1 || !trimmed.endsWith(')')) {{
-                        return trimmed;
-                    }}
-                    const inside = trimmed.slice(openIdx + 1, -1).trim();
-                    if (inside && digitOnly.test(inside)) {{
-                        return trimmed.slice(0, openIdx).trim();
-                    }}
-                    return trimmed;
-                }}
-
-                function findLabelContainer(link, doc) {{
-                    const existing = link.querySelector('.' + LABEL_CONTAINER_CLASS);
-                    if (existing) {{
-                        return existing;
-                    }}
-                    const spans = Array.from(link.querySelectorAll('span'));
-                    for (let i = spans.length - 1; i >= 0; i -= 1) {{
-                        const span = spans[i];
-                        if (!span) {{
-                            continue;
-                        }}
-                        if (span.classList && (span.classList.contains('nav-badge') || span.classList.contains('nav-badge__dot') || span.classList.contains('nav-badge__count'))) {{
-                            continue;
-                        }}
-                        if (span.closest && span.closest('.nav-badge')) {{
-                            continue;
-                        }}
-                        if (isIconElement(span)) {{
-                            continue;
-                        }}
-                        span.classList.add(LABEL_CONTAINER_CLASS);
-                        return span;
-                    }}
-                    return null;
-                }}
-
-                function applyBadges(doc) {{
-                    const navRoot = doc.querySelector(navSelector);
-                    if (!navRoot) {{
-                        return false;
-                    }}
-
-                    const links = Array.from(navRoot.querySelectorAll(navLinkSelector));
-                    links.forEach(link => {{
-                        const labelContainer = findLabelContainer(link, doc);
-                        if (!labelContainer) {{
-                            return;
-                        }}
-
-                        const originalRaw = labelContainer.dataset.originalLabel || labelContainer.textContent.trim();
-                        const original = extractTitle(originalRaw);
-                        if (!labelContainer.dataset.originalLabel || labelContainer.dataset.originalLabel !== original) {{
-                            labelContainer.dataset.originalLabel = original;
-                        }}
-
-                        const count = badgeCounts[original] || 0;
-                        const needsBadge = count > 0 || dotOnlyTitles.has(original);
-
-                        let textEl = labelContainer.querySelector('.nav-label__text');
-                        if (!textEl) {{
-                            textEl = doc.createElement('span');
-                            textEl.className = 'nav-label__text';
-                            textEl.textContent = original;
-                            while (labelContainer.firstChild) {{
-                                labelContainer.removeChild(labelContainer.firstChild);
-                            }}
-                            labelContainer.appendChild(textEl);
-                        }} else {{
-                            textEl.textContent = original;
-                        }}
-
-                        if (!needsBadge) {{
-                            const existingBadge = labelContainer.querySelector('.nav-badge');
-                            if (existingBadge) {{
-                                existingBadge.remove();
-                            }}
-                            labelContainer.classList.remove(LABEL_WITH_BADGE_CLASS);
-                            return;
-                        }}
-
-                        let badgeEl = labelContainer.querySelector('.nav-badge');
-                        if (!badgeEl) {{
-                            badgeEl = doc.createElement('span');
-                            badgeEl.className = 'nav-badge';
-                            const dotEl = doc.createElement('span');
-                            dotEl.className = 'nav-badge__dot';
-                            const countEl = doc.createElement('span');
-                            countEl.className = 'nav-badge__count';
-                            badgeEl.appendChild(dotEl);
-                            badgeEl.appendChild(countEl);
-                            labelContainer.appendChild(badgeEl);
-                        }}
-
-                        const countEl = badgeEl.querySelector('.nav-badge__count');
-                        if (count > 0) {{
-                            countEl.textContent = '(' + String(count) + ')';
-                            countEl.style.display = '';
-                        }} else {{
-                            countEl.textContent = '';
-                            countEl.style.display = 'none';
-                        }}
-
-                        badgeEl.style.display = 'inline-flex';
-                        labelContainer.classList.add(LABEL_WITH_BADGE_CLASS);
-                    }});
-
-                    return true;
-                }}
-
-                function bootstrap(attempts = 0) {{
-                    const MAX_ATTEMPTS = 40;
-                    try {{
-                        if (!window.parent || !window.parent.document) {{
-                            throw new Error('parent-not-ready');
-                        }}
-                        const doc = window.parent.document;
-
-                        function runApply(iteration = 0) {{
-                            if (applyBadges(doc)) {{
-                                return;
-                            }}
-                            if (iteration < MAX_ATTEMPTS) {{
-                                setTimeout(() => runApply(iteration + 1), 100);
-                            }}
-                        }}
-
-                        runApply();
-
-                        if (window.parent.__feedbackAppBadgeObserver) {{
-                            window.parent.__feedbackAppBadgeObserver.disconnect();
-                        }}
-
-                        function attachObserver(iteration = 0) {{
-                            const navRoot = doc.querySelector(navSelector);
-                            if (!navRoot) {{
-                                if (iteration < MAX_ATTEMPTS) {{
-                                    setTimeout(() => attachObserver(iteration + 1), 100);
-                                }}
-                                return;
-                            }}
-                            const observer = new MutationObserver(() => applyBadges(doc));
-                            observer.observe(navRoot, {{ childList: true, subtree: true }});
-                            window.parent.__feedbackAppBadgeObserver = observer;
-                        }}
-
-                        attachObserver();
-                    }} catch (error) {{
-                        if (attempts < MAX_ATTEMPTS) {{
-                            setTimeout(() => bootstrap(attempts + 1), 200);
-                        }}
-                    }}
-                }}
-
-                bootstrap();
-            }})();
-            </script>
-            """,
-            height=0,
-            width=0,
-        )
-
-
     current_page_title = pg.title
 else:
     # Not authenticated - login and external feedback access

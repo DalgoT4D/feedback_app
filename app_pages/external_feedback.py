@@ -225,7 +225,6 @@ if st.session_state.get("show_submit_confirmation", False):
             success = complete_external_stakeholder_feedback(token_data['request_id'], responses)
             if success:
                 st.success("🎉 Thank you! Your feedback has been submitted successfully.")
-                st.balloons()
                 st.session_state["external_token_data"]["status"] = "completed"
                 st.session_state["show_submit_confirmation"] = False
                 # Clear responses

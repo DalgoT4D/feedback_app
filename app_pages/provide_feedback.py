@@ -176,7 +176,6 @@ if selected_idx is not None:
             else:
                 if submit_final_feedback(request_id, responses):
                     st.success("🎉 Feedback submitted successfully!")
-                    st.balloons()
                     st.info(
                         "Your feedback has been recorded and will be shared anonymously."
                     )
