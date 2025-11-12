@@ -13,6 +13,7 @@ st.markdown("Complete metrics and insights for the 360-degree feedback system")
 # Get active cycle info
 active_cycle = get_active_review_cycle()
 conn = get_connection()
+cycle_id = active_cycle['cycle_id'] if active_cycle else None
 
 # Header info
 if active_cycle:
@@ -30,6 +31,14 @@ st.markdown("---")
 
 # Main metrics section
 st.subheader("Key Performance Indicators")
+
+# Initialize defaults to avoid NameError if a query fails
+nominated_4_users = 0
+approved_4_reviewers = 0
+had_4_approved = 0
+given_4_feedback = 0
+received_4_feedback = 0
+completed_everything = 0
 
 try:
     # Total users
@@ -76,7 +85,7 @@ try:
             SELECT COUNT(DISTINCT reviewer_id) FROM (
                 SELECT reviewer_id, COUNT(*) as completed_count
                 FROM feedback_requests 
-                WHERE cycle_id = ? AND status = 'completed'
+                WHERE cycle_id = ? AND workflow_state = 'completed'
                 GROUP BY reviewer_id
                 HAVING completed_count >= 4
             )
@@ -87,7 +96,7 @@ try:
             SELECT COUNT(DISTINCT requester_id) FROM (
                 SELECT requester_id, COUNT(*) as received_count
                 FROM feedback_requests 
-                WHERE cycle_id = ? AND status = 'completed'
+                WHERE cycle_id = ? AND workflow_state = 'completed'
                 GROUP BY requester_id
                 HAVING received_count >= 4
             )
@@ -107,12 +116,12 @@ try:
                     AND (
                         SELECT COUNT(*) FROM feedback_requests fr2 
                         WHERE fr2.requester_id = u.user_type_id AND fr2.cycle_id = ? 
-                        AND fr2.status = 'completed'
+                        AND fr2.workflow_state = 'completed'
                     ) >= 4
                     AND (
                         SELECT COUNT(*) FROM feedback_requests fr3 
                         WHERE fr3.reviewer_id = u.user_type_id AND fr3.cycle_id = ? 
-                        AND fr3.status = 'completed'
+                        AND fr3.workflow_state = 'completed'
                     ) >= 4
             )
         """, (cycle_id, cycle_id, cycle_id)).fetchone()[0]
@@ -216,12 +225,12 @@ try:
                 COUNT(DISTINCT CASE 
                     WHEN (SELECT COUNT(*) FROM feedback_requests fr2 
                           WHERE fr2.requester_id = u.user_type_id AND fr2.cycle_id = ? 
-                          AND fr2.status = 'completed') >= 4 
+                          AND fr2.workflow_state = 'completed') >= 4 
                     THEN u.user_type_id END) as received_4,
                 COUNT(DISTINCT CASE 
                     WHEN (SELECT COUNT(*) FROM feedback_requests fr3 
                           WHERE fr3.reviewer_id = u.user_type_id AND fr3.cycle_id = ? 
-                          AND fr3.status = 'completed') >= 4 
+                          AND fr3.workflow_state = 'completed') >= 4 
                     THEN u.user_type_id END) as given_4
             FROM users u
             WHERE u.is_active = 1
@@ -305,10 +314,10 @@ if active_cycle:
                          AND fr3.approval_status = 'approved' AND fr3.reviewer_status = 'accepted'), 0) as reviews_accepted,
                 COALESCE((SELECT COUNT(*) FROM feedback_requests fr4 
                          WHERE fr4.reviewer_id = u.user_type_id AND fr4.cycle_id = ? 
-                         AND fr4.status = 'completed'), 0) as reviews_completed,
+                         AND fr4.workflow_state = 'completed'), 0) as reviews_completed,
                 COALESCE((SELECT COUNT(*) FROM feedback_requests fr5 
                          WHERE fr5.requester_id = u.user_type_id AND fr5.cycle_id = ? 
-                         AND fr5.status = 'completed'), 0) as feedback_received
+                         AND fr5.workflow_state = 'completed'), 0) as feedback_received
             FROM users u
             WHERE u.is_active = 1
         """
@@ -327,7 +336,7 @@ if active_cycle:
         
         user_query += " ORDER BY u.first_name, u.last_name"
         
-        user_details = conn.execute(user_query, query_params).fetchall()
+        user_details = conn.execute(user_query, tuple(query_params)).fetchall()
         
         if user_details:
             # Apply status filter
@@ -467,7 +476,7 @@ with col2:
                 AVG(resp.rating_value) as avg_rating
             FROM feedback_responses resp
             JOIN feedback_requests fr ON resp.request_id = fr.request_id
-            WHERE fr.status = 'completed' AND resp.response_value IS NOT NULL
+            WHERE fr.workflow_state = 'completed' AND resp.response_value IS NOT NULL
         """).fetchone()
         
         if quality_metrics:

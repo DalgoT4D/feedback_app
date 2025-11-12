@@ -2,7 +2,6 @@ import streamlit as st
 from datetime import datetime
 from services.db_helper import (
     get_users_for_selection,
-    create_feedback_requests_with_approval,
     check_external_stakeholder_permission,
     get_active_review_cycle,
     get_all_cycles,
@@ -16,6 +15,7 @@ from services.db_helper import (
     check_user_deadline_enforcement,
     can_user_request_feedback,
 )
+from services.db_helper import create_feedback_request_fixed
 
 st.title("Request 360° Feedback")
 
@@ -123,17 +123,20 @@ already_nominated = get_user_nominated_reviewers(current_user_id)
 direct_manager = get_user_direct_manager(current_user_id)
 manager_id = direct_manager["user_type_id"] if direct_manager else None
 
-st.write("Select up to 4 colleagues to provide feedback on your performance:")
-st.write(
-    "You can nominate **up to 4 reviewers** total. You don't need to nominate all 4 at once."
-)
+if remaining_slots > 0:
+    st.write(
+        "Select up to four colleagues to share feedback that can support your growth and development."
+    )
+    st.write(
+        "You can nominate up to four reviewers in total. You don't need to add all four at once."
+    )
 
 if direct_manager:
     st.info(
         f"Note: Your direct manager ({direct_manager['name']}) cannot be nominated — their feedback is shared through ongoing discussions and review touchpoints like check-ins or H1 assessments."
     )
 
-if can_request_external:
+if can_request_external and remaining_slots > 0:
     st.success(
         "Managers and above level are encouraged to include external stakeholders, where relevant, in their feedback nominations."
     )
@@ -221,24 +224,27 @@ if non_selectable_users:
             )
     st.markdown("")
 
+selected_reviewers = []
+
 # Internal reviewers - only show selectable ones
 if selectable_users:
     internal_reviewers = st.multiselect(
         "Select internal reviewers from Tech4Dev:",
         options=selectable_users,
         format_func=lambda user: user["display_name"],
+        disabled=(remaining_slots <= 0),
     )
 
-    # All selected reviewers are valid since we pre-filtered
-    valid_internal_reviewers = internal_reviewers
+    # Respect remaining slots: ignore any selections if no slots left
+    valid_internal_reviewers = [] if remaining_slots <= 0 else internal_reviewers
 else:
     st.warning("[Warning] No reviewers available for selection at this time.")
     valid_internal_reviewers = []
 
 internal_reviewers = valid_internal_reviewers
 
-# External stakeholder
-if can_request_external:
+# External stakeholder (disabled when no slots remain)
+if can_request_external and remaining_slots > 0:
     external_reviewer = st.text_input("Enter email of external stakeholder (optional):")
     if external_reviewer:
         external_reviewer_clean = external_reviewer.strip().lower()
@@ -306,16 +312,20 @@ if duplicate_labels:
 selected_reviewers = deduped_reviewers
 duplicate_detected = len(duplicate_labels) > 0
 
-# Validation and submission
+"""Validation and submission"""
 st.subheader("Review Your Selection")
 
-if len(selected_reviewers) == 0:
-    st.warning("[Warning] Please select at least 1 reviewer to add.")
+if remaining_slots <= 0:
+    st.info("You have no nomination slots remaining for this cycle.")
+elif len(selected_reviewers) == 0:
+    st.warning("[Warning] Please select at least one reviewer to add.")
 elif duplicate_detected:
     st.info("Remove duplicate reviewers to continue.")
 elif len(selected_reviewers) + total_nominations > 4:
+    # Friendlier message when exceeding remaining capacity
+    plural = "reviewer" if remaining_slots == 1 else "reviewers"
     st.error(
-        f"[Error] You have selected {len(selected_reviewers)} reviewers, but you only have {remaining_slots} slot{'s' if remaining_slots != 1 else ''} remaining. Please reduce your selection."
+        f"You can add {remaining_slots} more {plural}. Deselect some selections to continue."
     )
 else:
     st.success(f"[Success] You have selected {len(selected_reviewers)} reviewers.")
@@ -328,29 +338,42 @@ else:
         current_user_id, reviewer_identifiers
     )
 
-    # Show summary with automatically assigned relationships
-    st.write("**Selected Reviewers with Auto-Assigned Relationships:**")
-    st.info(
-        "Relationships are automatically determined based on organizational structure"
+    # Merge in external selections that won't be returned by relationship mapper
+    external_pairs = [
+        (rid, rtype)
+        for (rid, rtype) in selected_reviewers
+        if not isinstance(rid, int)
+    ]
+    # Build combined list, preserving mapped internal relationships
+    mapped_ids = set(
+        rid for (rid, _rtype) in relationships_with_preview
     )
+    combined_pairs = list(relationships_with_preview)
+    for rid, rtype in external_pairs:
+        if rid not in mapped_ids:
+            combined_pairs.append((rid, "external_stakeholder"))
 
-    for reviewer_identifier, relationship_type in relationships_with_preview:
+    # Show summary with relationships (internal mapped; externals explicit)
+    st.write("**Selected Reviewers with Auto-Assigned Relationships:**")
+    st.info("Relationships are automatically determined based on organizational structure")
+
+    for reviewer_identifier, relationship_type in combined_pairs:
         if isinstance(reviewer_identifier, int):
             reviewer_info = next(
                 u for u in users if u["user_type_id"] == reviewer_identifier
             )
             relationship_display = relationship_type.replace("_", " ").title()
-            st.write(f"**{reviewer_info['name']}** - {relationship_display}")
+            st.write(f" **{reviewer_info['name']}** - {relationship_display}")
         else:
-            st.write(f"[External] **{reviewer_identifier}** - External Stakeholder")
+            st.write(f"**{reviewer_identifier}** - External Stakeholder")
 
     if st.button(
         f"Add {len(selected_reviewers)} Reviewer{'s' if len(selected_reviewers) > 1 else ''}",
         type="primary",
     ):
         # Use the relationships with auto-assigned types
-        success, message = create_feedback_requests_with_approval(
-            current_user_id, relationships_with_preview
+        success, message = create_feedback_request_fixed(
+            current_user_id, combined_pairs
         )
 
         if success:
@@ -372,6 +395,7 @@ if existing_nominations:
     for nomination in existing_nominations:
         # Get relationship icon
         relationship_type = nomination["relationship_type"]
+
         with st.expander(
             f"{nomination['reviewer_name']} - {nomination['relationship_type'].replace('_', ' ').title()}"
         ):
@@ -459,5 +483,6 @@ st.write(
 
 # Show nomination limits info
 st.info(
-    "**Note:** Each person can only receive a maximum of 4 feedback requests to prevent overload."
+    "**Note:** Each person can only receive a maximum of four feedback requests to prevent overload."
 )
+# moved

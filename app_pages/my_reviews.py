@@ -58,7 +58,7 @@ else:
                     if st.button(f"Complete Review", key=f"complete_{request_id}", type="primary"):
                         # Set the selected review in session state and switch to provide feedback page
                         st.session_state['selected_review_id'] = request_id
-                        st.switch_page("pages/provide_feedback.py")
+                        st.switch_page("app_pages/provide_feedback.py")
                 
                 st.divider()
 

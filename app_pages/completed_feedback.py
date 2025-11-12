@@ -186,7 +186,7 @@ with tab2:
             [
                 "peer",
                 "direct_reportee",
-                "internal_stakeholder",
+                "internal_collaborator",
                 "external_stakeholder",
                 "manager",
             ],

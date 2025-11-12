@@ -3,6 +3,72 @@ from services.db_helper import get_connection, update_user_details
 
 st.title("Manage Employees")
 
+# Add new user functionality
+st.subheader("Add New Employee")
+
+with st.form("add_user_form"):
+    col1, col2 = st.columns(2)
+
+    with col1:
+        first_name = st.text_input("First Name*")
+        last_name = st.text_input("Last Name*")
+        email = st.text_input("Email Address*")
+
+    with col2:
+        vertical = st.text_input("Department/Vertical")
+        designation = st.text_input("Designation")
+        reporting_manager_email = st.text_input("Reporting Manager Email")
+
+    submit_new_user = st.form_submit_button("Add Employee", type="primary")
+
+    if submit_new_user:
+        if first_name and last_name and email:
+            conn = get_connection()
+            try:
+                # Check if email already exists
+                check_query = "SELECT COUNT(*) FROM users WHERE email = ?"
+                result = conn.execute(check_query, (email,))
+                if result.fetchone()[0] > 0:
+                    st.error("Email already exists in the system")
+                else:
+                    # Insert new user
+                    insert_query = """
+                        INSERT INTO users (first_name, last_name, email, vertical, designation, reporting_manager_email)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        insert_query,
+                        (
+                            first_name,
+                            last_name,
+                            email,
+                            vertical,
+                            designation,
+                            reporting_manager_email,
+                        ),
+                    )
+
+                    # Get the new user ID
+                    user_id = cursor.lastrowid
+
+                    # Assign default employee role
+                    role_query = (
+                        "INSERT INTO user_roles (user_type_id, role_id) VALUES (?, 3)"
+                    )
+                    conn.execute(role_query, (user_id,))
+
+                    conn.commit()
+                    st.success(f"Employee added successfully!")
+                    st.info("Employee will need to set up their password on first login.")
+                    st.rerun()  # Refresh to show new employee in list
+            except Exception as e:
+                st.error(f"Error adding employee: {e}")
+                conn.rollback()
+        else:
+            st.error("Please fill in all required fields (marked with *)")
+
+st.divider()
 
 # Get all users
 def get_all_users():

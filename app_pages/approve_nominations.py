@@ -40,9 +40,12 @@ else:
             reviewer_id = approval[2]
             relationship_type = approval[3]
             requester_name = f"{approval[4]} {approval[5]}"
-            reviewer_name = f"{approval[6]} {approval[7]}"
+            reviewer_name = f"{approval[6]} {approval[7]}".strip()
             reviewer_vertical = approval[8]
             reviewer_designation = approval[9]
+            external_email = approval[11] if len(approval) > 11 else None
+            if not reviewer_name:
+                reviewer_name = external_email or "External Reviewer"
             created_at = approval[10]
 
             with st.container():

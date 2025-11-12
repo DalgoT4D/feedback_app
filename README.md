@@ -30,14 +30,28 @@ This application facilitates a performance review process where employees receiv
 - **Approve/Reject Nominations** from team members
 - **Review Relationship Types** declared by requesters
 - **Provide Rejection Reasons** when declining nominations
+- **Reportees' Feedback (Anonymized)** — New: View anonymized feedback received by your direct reports, select a reportee to see their progress and responses, and export to Excel. Reviewer identities are hidden from managers.
 
 ### HR Dashboard
-- **Create and Manage Review Cycles** with 4-5 week timelines
-- **Monitor Progress** across all phases
+- **Create and Manage Review Cycles** with streamlined 2-phase timeline (nomination and feedback)
+- **Advanced Deadline Management** - set overall cycle deadlines and extend deadlines for individual users
+- **Deadline Enforcement** - auto-acceptance of pending nominations when deadline passes
+- **Monitor Progress** with detailed user progress tracking across nomination and feedback phases
 - **Send Reminder Emails** to users with pending reviews
 - **View Analytics** and completion metrics
 - **Bulk Reminder Management**
 - **Reviewer Rejections** - monitor and review declined feedback requests with reasons
+
+### Communication (Email Notifications) — New
+- **Email Notifications Center**: Targeted emails with templates and preview
+  - Notification types: nomination reminders, manager approvals, feedback reminders, deadline warnings, cycle completion, and custom messages
+  - Audience targeting: all users, specific users, or by department
+  - Templating: use variables like {name}, {email}, {cycle_name}, {nomination_deadline}, {feedback_deadline}, {pending_count}
+  - Preview: live subject/body preview before sending
+  - History: view previously sent notifications with basic details
+- **Send Reminders**: One‑click bulk or individual reminders to users with pending reviews
+- **SMTP Integration**: Uses `.streamlit/secrets.toml` for SMTP
+- Note: Scheduling UI is present for selecting future date/time, but background scheduling/automation is not yet enabled; sends occur immediately when triggered from the app
 
 ### HR Admin Features
 - **User Management** - add, activate/deactivate users
@@ -69,6 +83,7 @@ smtp_server = "smtp.gmail.com"
 smtp_port = 587
 email_user = "your-email@company.com"
 email_password = "your-app-password"
+from_email = "hr@company.com"  # optional; defaults to email_user
 ```
 
 ### 3. Initialize Database
@@ -85,6 +100,8 @@ python setup/simple_insert.py
 streamlit run main.py
 ```
 
+ 
+
 ## Role Structure
 
 The system uses a simplified 2-role structure:
@@ -100,6 +117,35 @@ The system uses a simplified 2-role structure:
 - **Standard Features**: Request feedback, complete reviews, view results
 - **Manager Functions**: Team leads and managers get additional "Approve Team Nominations" access based on designation
 - **Automatic**: No special role assignment needed - default for all users
+
+## Deadline Management System
+
+### Streamlined Timeline
+The feedback cycle now operates on a simplified 2-phase timeline:
+
+1. **Nomination Phase**: Employees submit feedback requests and managers approve/reject them
+2. **Feedback Phase**: Approved reviewers complete their feedback forms
+
+**Removed phases**: Approval deadline and results deadline have been eliminated for simplicity.
+
+### Deadline Enforcement
+- **Nomination Deadline**: Once passed, employees cannot submit new requests
+  - All pending manager approvals are automatically approved
+  - All pending reviewer acceptances are automatically accepted
+- **Feedback Deadline**: Once passed, reviewers cannot complete feedback forms
+  - Results become available immediately after all feedback is collected
+
+### Per-User Extensions
+HR can extend deadlines for individual users when needed:
+- **Individual Extensions**: Extend nomination or feedback deadlines for specific users
+- **Reason Tracking**: All extensions require documentation
+- **Override Capability**: Users with extensions can continue working past general deadlines
+
+### Auto-Acceptance Logic
+When the nomination deadline passes:
+- Pending manager approvals → Automatically approved
+- Pending reviewer responses → Automatically accepted as "yes"
+- System logs all auto-accepted items for transparency
 
 ## First-Time Login
 
@@ -119,14 +165,27 @@ The system uses a simplified 2-role structure:
 - **Status Visibility**: Clear tracking of each nomination's approval and completion status
 - **Manager Approval**: Each nomination requires manager approval regardless of when submitted
 
+### Automatic Relationship Mapping
+
+The system automatically determines relationships based on organizational data:
+
+**Mapping Rules**:
+- **Same team + no reporting relationship** → **Peer**
+- **Different teams** → **Internal Collaborator** 
+- **Person reports to you** → **Direct Reportee**
+- **Your direct manager** → **Blocked** (cannot nominate)
+
+**No Manual Selection**: Users simply choose reviewers; the system handles relationship classification automatically.
+
 ### Nomination Workflow
 
-1. **Employee initiates nomination** for 1-4 reviewers
-2. **System validates** reviewer availability and relationship appropriateness
-3. **Manager reviews and approves/rejects** each nomination
-4. **Approved reviewers receive notification** to complete feedback
-5. **Employee tracks progress** in real-time dashboard
-6. **Results compiled** once feedback collection phase ends
+1. **Employee selects reviewers** from available colleagues (1-4 total)
+2. **System automatically maps relationships** based on organizational structure
+3. **System validates** reviewer availability and prevents invalid selections
+4. **Manager reviews and approves/rejects** each nomination
+5. **Approved reviewers receive notification** to complete feedback
+6. **Employee tracks progress** in real-time dashboard
+7. **Results compiled** once feedback collection phase ends
 
 ### Benefits of This Approach
 
@@ -170,29 +229,49 @@ The system uses a simplified 2-role structure:
 ### For HR (hr role)
 
 1. **Cycle Management**
-   - Create and manage review cycles with clear deadlines
+   - Create and manage review cycles with streamlined 2-phase deadlines
+   - Access advanced deadline management page for per-user extensions
    - Monitor cycle progress and completion status
    - Complete cycles when ready
 
-2. **Activity Tracking**
+2. **Advanced Deadline Management** (New Feature)
+   - **Manage Cycle Deadlines** - dedicated page for comprehensive deadline control
+   - **Modify Overall Deadlines** - update nomination and feedback deadlines for entire cycle
+   - **Extend Individual User Deadlines** - grant extensions to specific users with reason tracking
+   - **Progress Overview** - detailed user progress tracking with accordions for nomination and feedback phases
+   - **Auto-Acceptance Controls** - manually trigger auto-acceptance of expired nominations
+   - **Color-Coded Status** - green for complete, yellow for pending, visual progress indicators
+
+3. **Activity Tracking**
    - Overview dashboard with key performance indicators
    - User activity monitoring across all cycles
    - Comprehensive analytics and completion metrics
 
-3. **Feedback Management**
+4. **Feedback Management**
    - View completed feedback and results
    - Monitor reviewer rejections with reasons
    - Track feedback quality and participation
 
-4. **Communication**
+5. **Communication**
    - Send email notifications and reminders
-   - Configure deadline-specific messaging
+   - Configure deadline-specific messaging (updated for new deadline structure)
    - Bulk communication management
 
-5. **Employee Management**
+6. **Employee Management**
    - Manage user accounts and roles
    - Update employee information and assignments
    - System administration tasks
+
+### For Employees (New Feature)
+
+**Employee Dashboard** - New landing page showing:
+- **Welcome Section** with personalized greeting
+- **Current Cycle Information** with cycle name and description
+- **Deadline Status** - visual indicators for nomination and feedback deadlines
+- **Personal Progress Metrics** - requests submitted, awaiting approval, pending, completed
+- **Quick Actions** - direct access to request feedback, provide feedback, view results
+- **Pending Actions Required** - notifications for requests needing response or feedback to complete
+- **Deadline Enforcement Notices** - clear messaging when deadlines have passed
 
 ## Nomination Status Tracking
 
@@ -210,12 +289,12 @@ The application provides comprehensive status tracking for each nomination with 
 - **[In Progress]** Reviewer has started but not completed
 - **[Completed]** Feedback submitted and final
 
-**Relationship Types**:
-- **[Peer]** Same team, automatically detected
-- **[Internal]** Cross-team stakeholder, automatically detected
-- **[Reportee]** Direct reports, automatically detected
+**Relationship Types** (Automatically Assigned):
+- **[Peer]** Same team, no reporting relationship
+- **[Internal]** Cross-team collaborator, different teams
+- **[Reportee]** Direct reports, people who report to you
 - **[External]** External stakeholder outside organization
-- **[Manager]** Direct manager, cannot be nominated (greyed out)
+- **[Manager]** Direct manager, cannot be nominated (blocked)
 - **[Nominated]** Already nominated, cannot nominate again (greyed out)
 
 ### Dashboard Features
@@ -237,6 +316,23 @@ The application provides comprehensive status tracking for each nomination with 
 - Leadership effectiveness feedback
 
 ### External Stakeholders
+
+External stakeholders can be nominated by employees (subject to manager approval), receive a secure email token, and provide feedback without needing to “accept” the request in-app.
+
+- Manager Approval: External nominations go through the normal manager approval workflow.
+- Invitations: After approval, the system emails a secure token to the external stakeholder.
+- External Login: They authenticate via email + token on the External Stakeholder Login page.
+- Minimal UI: They only see the feedback deadline and a “Provide Feedback” action; they do not see any “Request Feedback” features.
+- No Acceptance Step: Their request is considered accepted upon token login so they can go straight to the form.
+- Anonymity: Their identity is not shown to the requester or the requester’s manager in results.
+
+### Eligibility Rules — New
+- Date of Joining (DOJ) policy drives who can request or give feedback:
+  - Joined on/before 2025-09-30: Eligible to request feedback and be invited to give feedback
+  - Joined after 2025-09-30: Can be invited to give feedback once tenure >= 3 months; cannot request feedback
+  - Missing DOJ: Not blocked by default (configurable policy)
+- Reviewer selection lists only include users eligible to give feedback per the above rules.
+- The “Request Feedback” page is only available to users eligible to request per the above rules.
 - Professionalism, Reliability, Responsiveness, Understanding ratings
 - Quality of delivery and collaboration examples
 
@@ -244,7 +340,7 @@ The application provides comprehensive status tracking for each nomination with 
 
 - **Password Hashing**: Secure bcrypt encryption
 - **Role-Based Access**: Granular permission control
-- **Anonymized Feedback**: Reviewers remain anonymous
+- **Anonymized Feedback**: Reviewers remain anonymous to requesters and their managers; HR can access named views for auditing
 - **Nomination Limits**: Prevents reviewer overload (max 4 requests per person)
 - **Rejection Tracking**: Prevents re-nomination of rejected reviewers
 
@@ -328,6 +424,37 @@ The application provides comprehensive status tracking for each nomination with 
 - **Email**: SMTP integration for notifications
 - **Export**: Excel generation with openpyxl
 
+## Developer Guide
+
+- App entry: `main.py` defines role-based navigation and sidebar menu.
+- Authentication: `login.py` sets `st.session_state['authenticated']`, `user_data`, and roles (via `services/auth_service.py`).
+- Database: Turso (SQLite) via `libsql_experimental`. All DB helpers live in `services/db_helper.py`.
+- Key data model tables:
+  - `users`: includes `date_of_joining` (DATE), `vertical`, `designation`, `reporting_manager_email`.
+  - `review_cycles`: active cycle with `nomination_deadline`, `feedback_deadline`.
+  - `feedback_requests`: one per nomination; tracks `approval_status`, `reviewer_status`, `status` and external fields.
+  - `feedback_responses`: final submitted answers.
+  - `draft_responses`: in-progress saves.
+  - `external_stakeholder_tokens`: token + status for external reviewers.
+  - `email_logs`: minimal history of notifications.
+- Eligibility logic:
+  - Requesters: `services/db_helper.can_user_request_feedback(user_id)` controls visibility/access to the Request page.
+  - Reviewers: `services/db_helper.get_users_for_selection` filters eligible reviewers based on DOJ and tenure.
+- External stakeholders:
+  - Token is generated and emailed only after manager approval.
+  - Token login auto-accepts and routes to feedback form.
+- Manager tools:
+  - Approve team nominations.
+  - View reportees’ anonymized feedback (`pages/reportees_feedback.py`).
+- HR tools:
+  - `pages/completed_feedback.py` provides named views of completed feedback.
+  - Notifications center + reminders under Communication.
+
+Known considerations
+- Align `email_logs` schema with runtime fields (this repo’s `setup/create_schema.py` is already aligned).
+- Missing DOJ is treated as “not blocked” for now; set it in DB to enforce strict eligibility.
+- Excel export requires `openpyxl` (included in requirements).
+
 ## File Structure
 
 ```
@@ -351,14 +478,25 @@ feedback_app/
 │   │   ├── user_activity.py        # User activity monitoring
 │   │   ├── completed_feedback.py   # Feedback management
 │   │   ├── reviewer_rejections.py  # Rejection tracking
-│   │   ├── email_notifications.py  # Communication tools
 │   │   └── manage_employees.py     # Employee management
-│   └── admin/                      # System administration
+├── pages/
+│   ├── email_notifications.py      # Email Notifications Center (HR > Communication)
+│   ├── send_reminders.py           # Bulk/individual reminders (HR > Communication)
+│   ├── reportees_feedback.py       # Managers: view reportees' anonymized feedback
+│   └── external_auth.py            # External stakeholder login (email + token)
 ├── setup/                          # Database setup & utilities
 ├── testing/                        # Automated testing with MCP
 ├── docs/                           # Documentation
 └── .streamlit/
     └── secrets.toml                # Database & email config
+
+## Email Notifications Details
+
+- Navigation: HR role → Communication → Email Notifications / Send Reminders
+- SMTP Setup: configure `[email]` in `.streamlit/secrets.toml` (SendGrid, Gmail, etc.)
+  
+- Email Logs: The app maintains a lightweight `email_logs` table for history. If you initialized your DB before this feature, run `python setup/create_schema.py` to add it.
+- Limitations: The "schedule for later" controls are UI-only for now; background scheduling/cron is not yet wired up.
 ```
 
 ## Deployment
@@ -417,7 +555,7 @@ See `testing/README.md` for detailed testing instructions.
 - **Add New Users**: Use Administration > User Management (HR only)
 - **Assign HR Roles**: Use Management > Manage Employees (HR only)
 - **Create Cycles**: Use Dashboard > Create New Review Cycle (HR only)
-- **System Health**: Use Administration > System Settings (HR only)
+  
 
 ## License
 

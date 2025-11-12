@@ -148,7 +148,7 @@ HR Team""",
 
 You have pending nomination approvals for your team members in the {cycle_name}.
 
-Please review and approve/reject the nominations at your earliest convenience. The approval deadline is {approval_deadline}.
+Please review and approve/reject the nominations at your earliest convenience. The nomination deadline is {nomination_deadline}.
 
 Questions? Contact HR.
 
@@ -212,7 +212,7 @@ HR Team""",
         "Email Body:",
         value=template["body"],
         height=200,
-        help="Available variables: {name}, {email}, {cycle_name}, {nomination_deadline}, {approval_deadline}, {feedback_deadline}, {pending_count}",
+        help="Available variables: {name}, {email}, {cycle_name}, {nomination_deadline}, {feedback_deadline}, {pending_count}",
     )
 
     # Preview section
@@ -223,7 +223,6 @@ HR Team""",
             "email": "john.doe@company.com",
             "cycle_name": active_cycle["cycle_display_name"],
             "nomination_deadline": active_cycle["nomination_deadline"],
-            "approval_deadline": active_cycle["approval_deadline"],
             "feedback_deadline": active_cycle["feedback_deadline"],
             "pending_count": "2",
             "deadline_type": "feedback completion",

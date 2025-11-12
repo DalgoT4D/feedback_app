@@ -1,7 +1,10 @@
 streamlit
 pandas
+openpyxl
 plotly
 libsql-experimental
 streamlit-autorefresh
 streamlit-scroll-to-top
 bcrypt
+streamlit-antd-components==0.3.2
+sendgrid>=6.11.0
