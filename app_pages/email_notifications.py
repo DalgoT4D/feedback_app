@@ -17,7 +17,7 @@ active_cycle = get_active_review_cycle()
 
 if not active_cycle:
     st.warning(
-        "[Warning] No active review cycle found. Email notifications require an active cycle."
+        "No active review cycle found. Email notifications require an active cycle."
     )
     st.info(
         "Create a new review cycle from the Dashboard to enable email notifications."
@@ -60,12 +60,12 @@ with tab1:
             "custom_message",
         ],
         format_func=lambda x: {
-            "nomination_reminder": "[Nomination] Nomination Reminder",
-            "approval_reminder": "[Approval] Manager Approval Reminder",
-            "feedback_reminder": "[Feedback] Feedback Completion Reminder",
-            "deadline_warning": "[Warning] Deadline Warning",
-            "cycle_completion": "[Complete] Cycle Completion Notice",
-            "custom_message": "[Custom] Custom Message",
+            "nomination_reminder": "Nomination Reminder",
+            "approval_reminder": "Manager Approval Reminder",
+            "feedback_reminder": "Feedback Completion Reminder",
+            "deadline_warning": "Deadline Warning",
+            "cycle_completion": "Cycle Completion Notice",
+            "custom_message": "Custom Message",
         }[x],
     )
 
@@ -82,11 +82,11 @@ with tab1:
                 "pending_only",
             ],
             format_func=lambda x: {
-                "all_users": "[All] All Active Users",
-                "specific_users": "[Specific] Specific Users",
-                "by_vertical": "[Department] By Department",
-                "managers_only": "[Managers] Managers Only",
-                "pending_only": "[Pending] Users with Pending Reviews",
+                "all_users": "All Active Users",
+                "specific_users": "Specific Users",
+                "by_vertical": "By Department",
+                "managers_only": "Managers Only",
+                "pending_only": "Users with Pending Reviews",
             }[x],
         )
 
@@ -140,7 +140,7 @@ Please log into the system and nominate 4 colleagues to provide feedback on your
 If you have questions, please contact HR.
 
 Best regards,
-HR Team""",
+Talent Management""",
         },
         "approval_reminder": {
             "subject": "Manager Action Required: Review Team Nominations",
@@ -153,7 +153,7 @@ Please review and approve/reject the nominations at your earliest convenience. T
 Questions? Contact HR.
 
 Best regards,
-HR Team""",
+Talent Management""",
         },
         "feedback_reminder": {
             "subject": "Reminder: Complete Your Feedback Reviews",
@@ -166,7 +166,7 @@ Please complete these reviews by {feedback_deadline} to ensure everyone receives
 Thank you for your participation.
 
 Best regards,
-HR Team""",
+Talent Management""",
         },
         "deadline_warning": {
             "subject": "Urgent: Approaching Deadline",
@@ -179,7 +179,7 @@ Please take action immediately to avoid missing this important deadline.
 Contact HR if you need assistance.
 
 Best regards,
-HR Team""",
+Talent Management""",
         },
         "cycle_completion": {
             "subject": "Feedback Cycle Complete - Thank You!",
@@ -190,7 +190,7 @@ The {cycle_name} has been successfully completed.
 Your feedback results are now available in the system. Thank you for your participation in this important development process.
 
 Best regards,
-HR Team""",
+Talent Management""",
         },
         "custom_message": {
             "subject": "Custom Notification",
@@ -199,7 +199,7 @@ HR Team""",
 [Your custom message here]
 
 Best regards,
-HR Team""",
+Talent Management""",
         },
     }
 
@@ -320,9 +320,9 @@ HR Team""",
             except Exception as e:
                 print(f"Error logging email: {e}")
 
-            st.success(f"[Success] Notification sent to {success_count} recipients!")
+            st.success(f"Notification sent to {success_count} recipients!")
         else:
-            st.error("[Error] Failed to send notifications")
+            st.error("Failed to send notifications")
 
 with tab2:
     st.subheader("Scheduled Reminders")
@@ -404,7 +404,7 @@ with tab2:
             )
 
         if st.form_submit_button("[Create] Create Reminder"):
-            st.success(f"[Success] Scheduled reminder '{reminder_name}' created!")
+            st.success(f"Scheduled reminder '{reminder_name}' created!")
 
 with tab3:
     st.subheader("Notification History")

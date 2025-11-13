@@ -12,6 +12,7 @@ import streamlit as st
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
 try:
     import sendgrid
     from sendgrid.helpers.mail import Mail, Email, To, Content
@@ -38,12 +39,15 @@ TEMP_EMAIL_WHITELIST = {
 }
 # --------------------------------------------------------------
 
+
 def get_sendgrid_client():
     """Initialize SendGrid client with API key from secrets."""
     try:
         # Use existing email configuration from secrets.toml
         if "email" in st.secrets:
-            api_key = st.secrets["email"].get("email_password")  # SendGrid API key may be stored as email_password
+            api_key = st.secrets["email"].get(
+                "email_password"
+            )  # SendGrid API key may be stored as email_password
             if not api_key:
                 logger.error("SendGrid API key not found in email.email_password")
                 return None
@@ -58,6 +62,7 @@ def get_sendgrid_client():
         logger.error(f"Failed to initialize SendGrid client: {e}")
         return None
 
+
 def get_sender_email():
     """Get sender email from secrets."""
     try:
@@ -69,14 +74,18 @@ def get_sender_email():
         logger.warning(f"Failed to get sender email: {e}")
         return "noreply@tech4dev.com"
 
-def log_email_sent(to_email: str, subject: str, email_type: str, success: bool, error_msg: str = None):
+
+def log_email_sent(
+    to_email: str, subject: str, email_type: str, success: bool, error_msg: str = None
+):
     """Log sent email to database for tracking and debugging."""
     try:
         conn = sqlite3.connect("feedback_app.db")
         cursor = conn.cursor()
-        
+
         # Create table if it doesn't exist
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS sent_emails_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 to_email TEXT NOT NULL,
@@ -87,21 +96,28 @@ def log_email_sent(to_email: str, subject: str, email_type: str, success: bool, 
                 error_message TEXT,
                 sender_email TEXT
             )
-        """)
-        
+        """
+        )
+
         # Insert log entry
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO sent_emails_log 
             (to_email, subject, email_type, success, error_message, sender_email)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (to_email, subject, email_type, success, error_msg, get_sender_email()))
-        
+        """,
+            (to_email, subject, email_type, success, error_msg, get_sender_email()),
+        )
+
         conn.commit()
         conn.close()
     except Exception as e:
         logger.warning(f"Failed to log email: {e}")
 
-def _send_email_smtp(to_email: str, subject: str, html_body: str, text_body: Optional[str] = None) -> bool:
+
+def _send_email_smtp(
+    to_email: str, subject: str, html_body: str, text_body: Optional[str] = None
+) -> bool:
     """Send email using SMTP settings from secrets (works with SendGrid SMTP relay)."""
     try:
         if "email" not in st.secrets:
@@ -137,36 +153,49 @@ def _send_email_smtp(to_email: str, subject: str, html_body: str, text_body: Opt
         return False
 
 
-def send_email(to_email: str, subject: str, html_body: str, text_body: Optional[str] = None, email_type: str = "general") -> bool:
+def send_email(
+    to_email: str,
+    subject: str,
+    html_body: str,
+    text_body: Optional[str] = None,
+    email_type: str = "general",
+) -> bool:
     """
     Queue email for background processing to avoid blocking UI.
-    
+
     Args:
         to_email: Recipient email address
         subject: Email subject line
         html_body: HTML content of email
         text_body: Plain text version (optional)
         email_type: Type of email for logging purposes
-        
+
     Returns:
         bool: True if email queued successfully, False otherwise
     """
     from services.db_helper import queue_email
-    
+
     # Queue the email for background processing
     success = queue_email(to_email, subject, html_body, text_body, email_type)
-    
+
     if success:
         logger.info(f"[EMAIL-QUEUED] Email queued for {to_email} - type: {email_type}")
     else:
         logger.error(f"[EMAIL-QUEUE-FAILED] Failed to queue email for {to_email}")
-    
+
     return success
 
-def _send_email_sync(to_email: str, subject: str, html_body: str, text_body: Optional[str] = None, email_type: str = "general"):
+
+def _send_email_sync(
+    to_email: str,
+    subject: str,
+    html_body: str,
+    text_body: Optional[str] = None,
+    email_type: str = "general",
+):
     """
     Synchronously send email - used by background worker only.
-    
+
     Returns:
         tuple: (success: bool, error_message: str)
     """
@@ -174,7 +203,9 @@ def _send_email_sync(to_email: str, subject: str, html_body: str, text_body: Opt
         # TEMPORARY: testing whitelist guard
         recipient = (to_email or "").strip().lower()
         if TEMP_EMAIL_WHITELIST_ACTIVE and recipient not in TEMP_EMAIL_WHITELIST:
-            logger.info(f"[TEMP-WHITELIST] Skipping email to {to_email} for type '{email_type}'")
+            logger.info(
+                f"[TEMP-WHITELIST] Skipping email to {to_email} for type '{email_type}'"
+            )
             log_email_sent(to_email, subject, email_type, True, "skipped_by_whitelist")
             return True, "skipped_by_whitelist"
     except Exception as e:
@@ -200,19 +231,27 @@ def _send_email_sync(to_email: str, subject: str, html_body: str, text_body: Opt
         to_email_obj = To(to_email)
 
         if text_body:
-            mail = Mail(from_email, to_email_obj, subject, Content("text/plain", text_body))
+            mail = Mail(
+                from_email, to_email_obj, subject, Content("text/plain", text_body)
+            )
             mail.add_content(Content("text/html", html_body))
         else:
-            mail = Mail(from_email, to_email_obj, subject, Content("text/html", html_body))
+            mail = Mail(
+                from_email, to_email_obj, subject, Content("text/html", html_body)
+            )
 
         response = sg_client.send(mail)
         if response.status_code in [200, 202]:
-            logger.info(f"Email sent successfully to {to_email} - Status: {response.status_code}")
+            logger.info(
+                f"Email sent successfully to {to_email} - Status: {response.status_code}"
+            )
             log_email_sent(to_email, subject, email_type, True)
             return True, f"sent_via_sendgrid_status_{response.status_code}"
         else:
             error_msg = f"Status: {response.status_code}"
-            logger.warning(f"Email send failed - Status: {response.status_code}, Response: {response.body}")
+            logger.warning(
+                f"Email send failed - Status: {response.status_code}, Response: {response.body}"
+            )
             log_email_sent(to_email, subject, email_type, False, error_msg)
             return False, error_msg
     except Exception as e:
@@ -221,16 +260,23 @@ def _send_email_sync(to_email: str, subject: str, html_body: str, text_body: Opt
         log_email_sent(to_email, subject, email_type, False, error_msg)
         return False, error_msg
 
-def send_external_stakeholder_invite(external_email: str, requester_name: str, requester_designation: str, 
-                                   cycle_name: str, token: str, feedback_deadline: str, 
-                                   requester_vertical: str = "") -> bool:
+
+def send_external_stakeholder_invite(
+    external_email: str,
+    requester_name: str,
+    requester_designation: str,
+    cycle_name: str,
+    token: str,
+    feedback_deadline: str,
+    requester_vertical: str = "",
+) -> bool:
     """Send invitation email to external stakeholder with token-based access."""
-    
+
     # Use localhost for development, can be configured later
     app_url = "http://localhost:8501"
-    
+
     subject = f"Feedback Request from {requester_name} at Tech4Dev"
-    
+
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -284,7 +330,7 @@ def send_external_stakeholder_invite(external_email: str, requester_name: str, r
                 <li>You can decline to participate if you don't have sufficient working relationship</li>
             </ul>
             
-            <p>If you have any questions or need assistance, please contact the HR team at Tech4Dev.</p>
+            <p>If you have any questions or need assistance, please contact diana@projecttech4dev.org.</p>
             
             <p>Thank you for taking the time to provide valuable feedback!</p>
             
@@ -298,7 +344,7 @@ def send_external_stakeholder_invite(external_email: str, requester_name: str, r
     </body>
     </html>
     """
-    
+
     text_body = f"""
     360° Feedback Request from {requester_name}
 
@@ -326,19 +372,28 @@ def send_external_stakeholder_invite(external_email: str, requester_name: str, r
 
     The Tech4Dev Team
     """
-    
-    return send_email(external_email, subject, html_body, text_body, "external_stakeholder_invite")
 
-def send_nominee_invite(reviewer_email: str, reviewer_name: str, requester_name: str, 
-                       cycle_name: str, feedback_deadline: str, relationship_type: str) -> bool:
+    return send_email(
+        external_email, subject, html_body, text_body, "external_stakeholder_invite"
+    )
+
+
+def send_nominee_invite(
+    reviewer_email: str,
+    reviewer_name: str,
+    requester_name: str,
+    cycle_name: str,
+    feedback_deadline: str,
+    relationship_type: str,
+) -> bool:
     """Send invitation email to internal reviewer after nomination is approved."""
-    
-    # Use localhost for development, can be configured later
-    app_url = "http://localhost:8501"
+
+    # Use production app URL
+    app_url = "https://360feedbacktool.streamlit.app/"
     relationship_display = relationship_type.replace("_", " ").title()
-    
-    subject = f"Feedback Request: Provide feedback for {requester_name}"
-    
+
+    subject = "📌 360-Degree Feedback – Your Input Requested"
+
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -357,39 +412,24 @@ def send_nominee_invite(reviewer_email: str, reviewer_name: str, requester_name:
         </div>
         
         <div class="content">
-            <h2>Hi {reviewer_name},</h2>
+            <p>Hi {reviewer_name},</p>
             
-            <p>You have been selected to provide feedback for <strong>{requester_name}</strong> 
-            as part of their 360-degree review process.</p>
+            <p>You have been nominated by <strong>{requester_name}</strong> to provide feedback as part of the 360-degree feedback process. This is an opportunity for you to share your valuable feedback on the individual's strengths and areas for improvement which can help the person grow and excel. Request you to take out the time and fill the form in earnest.</p>
             
-            <div class="info-box">
-                <h3>Feedback Details:</h3>
-                <p><strong>For:</strong> {requester_name}</p>
-                <p><strong>Your Relationship:</strong> {relationship_display}</p>
-                <p><strong>Review Cycle:</strong> {cycle_name}</p>
-                <p><strong>Deadline:</strong> {feedback_deadline}</p>
-            </div>
+            <p>🔹 <strong>How to Submit Your Feedback?</strong></p>
+            <p>Please complete the following form by <strong>{feedback_deadline}</strong>:</p>
+            <p>📝 <a href="{app_url}">{app_url}</a></p>
             
-            <p><strong>Next Steps:</strong></p>
-            <ol>
-                <li>Login to the feedback portal: <a href="{app_url}">{app_url}</a></li>
-                <li>Go to "Review Requests" to see all your pending requests</li>
-                <li>Accept or decline this feedback request</li>
-                <li>If accepting, complete the feedback questionnaire</li>
-            </ol>
+            <p><strong>Approve the nomination and fill out the form!</strong></p>
             
-            <p><strong>Important Notes:</strong></p>
-            <ul>
-                <li>Your feedback will remain anonymous to the reviewee</li>
-                <li>Please provide honest, constructive feedback</li>
-                <li>You can save your progress and return later</li>
-                <li>If you decline, please provide a brief reason</li>
-            </ul>
+            <p>Your feedback will remain confidential and will be used to support professional development. If you have any questions, feel free to reach out.</p>
             
-            <p>Thank you for contributing to our feedback culture!</p>
+            <p>Thanks for your time and input!</p>
+            
+            <p>Best,</p>
             
             <p>Best regards,<br>
-            The HR Team</p>
+            Talent Management</p>
         </div>
         
         <div class="footer">
@@ -398,7 +438,7 @@ def send_nominee_invite(reviewer_email: str, reviewer_name: str, requester_name:
     </body>
     </html>
     """
-    
+
     text_body = f"""
     360° Feedback Request
 
@@ -421,25 +461,33 @@ def send_nominee_invite(reviewer_email: str, reviewer_name: str, requester_name:
     Your feedback will remain anonymous. Please provide honest, constructive feedback.
 
     Thank you!
-    The HR Team
+    Talent Management
     """
-    
+
     return send_email(reviewer_email, subject, html_body, text_body, "nominee_invite")
 
-def send_manager_approval_request(manager_email: str, manager_name: str, requester_name: str, 
-                                 nominees: List[Dict], cycle_name: str) -> bool:
+
+def send_manager_approval_request(
+    manager_email: str,
+    manager_name: str,
+    requester_name: str,
+    nominees: List[Dict],
+    cycle_name: str,
+) -> bool:
     """Send notification to manager about pending nomination approvals."""
-    
+
     # Use localhost for development, can be configured later
     app_url = "http://localhost:8501"
-    
+
     subject = f"Nomination Approval Required: {requester_name}'s feedback requests"
-    
+
     nominees_list = ""
     for i, nominee in enumerate(nominees, 1):
         relationship = nominee.get("relationship_type", "").replace("_", " ").title()
-        nominees_list += f"{i}. {nominee.get('reviewer_name', 'Unknown')} ({relationship})\n"
-    
+        nominees_list += (
+            f"{i}. {nominee.get('reviewer_name', 'Unknown')} ({relationship})\n"
+        )
+
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -487,7 +535,7 @@ def send_manager_approval_request(manager_email: str, manager_name: str, request
             <p>Please review and approve/reject these nominations promptly to keep the feedback process on track.</p>
             
             <p>Best regards,<br>
-            The HR Team</p>
+            Talent Management</p>
         </div>
         
         <div class="footer">
@@ -496,7 +544,7 @@ def send_manager_approval_request(manager_email: str, manager_name: str, request
     </body>
     </html>
     """
-    
+
     text_body = f"""
     Nomination Approval Required
 
@@ -515,19 +563,26 @@ def send_manager_approval_request(manager_email: str, manager_name: str, request
 
     Please review promptly to keep the feedback process on track.
 
-    The HR Team
+    Talent Management
     """
-    
-    return send_email(manager_email, subject, html_body, text_body, "manager_approval_request")
 
-def send_nomination_approved(requester_email: str, requester_name: str, approved_nominees: List[str], 
-                           cycle_name: str) -> bool:
+    return send_email(
+        manager_email, subject, html_body, text_body, "manager_approval_request"
+    )
+
+
+def send_nomination_approved(
+    requester_email: str,
+    requester_name: str,
+    approved_nominees: List[str],
+    cycle_name: str,
+) -> bool:
     """Send notification when nominations are approved by manager."""
-    
+
     subject = f"Feedback nominations approved for {cycle_name}"
-    
+
     nominees_list = "\n".join([f"• {nominee}" for nominee in approved_nominees])
-    
+
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -560,14 +615,14 @@ def send_nomination_approved(requester_email: str, requester_name: str, approved
             <ul>
                 <li>Approved reviewers will receive invitation emails to provide feedback</li>
                 <li>You can track the progress in your "Current Feedback" dashboard</li>
-                <li>You'll be notified when feedback is completed</li>
-                <li>Final feedback report will be shared after the cycle ends</li>
+                <li>You'll be notified by email when feedback is provided</li>
+                <li>You will be able to view your anonymized feedback on the app.</li>
             </ul>
             
             <p>The feedback collection process is now underway!</p>
             
             <p>Best regards,<br>
-            The HR Team</p>
+            Talent Management</p>
         </div>
         
         <div class="footer">
@@ -576,20 +631,25 @@ def send_nomination_approved(requester_email: str, requester_name: str, approved
     </body>
     </html>
     """
-    
+
     return send_email(requester_email, subject, html_body, None, "nomination_approved")
 
-def send_nomination_rejected(requester_email: str, requester_name: str, rejected_nominees: List[Dict], 
-                           cycle_name: str) -> bool:
+
+def send_nomination_rejected(
+    requester_email: str,
+    requester_name: str,
+    rejected_nominees: List[Dict],
+    cycle_name: str,
+) -> bool:
     """Send notification when nominations are rejected by manager."""
-    
+
     subject = f"Feedback nominations require revision for {cycle_name}"
-    
+
     rejections_list = ""
     for nominee in rejected_nominees:
         reason = nominee.get("rejection_reason", "No reason provided")
         rejections_list += f"• {nominee.get('reviewer_name', 'Unknown')}: {reason}\n"
-    
+
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -629,7 +689,7 @@ def send_nomination_rejected(requester_email: str, requester_name: str, rejected
             <p>Please submit replacement nominations promptly to stay on track for the feedback deadline.</p>
             
             <p>Best regards,<br>
-            The HR Team</p>
+            Talent Management</p>
         </div>
         
         <div class="footer">
@@ -638,17 +698,23 @@ def send_nomination_rejected(requester_email: str, requester_name: str, rejected
     </body>
     </html>
     """
-    
+
     return send_email(requester_email, subject, html_body, None, "nomination_rejected")
 
-def send_feedback_submitted_notification(requester_email: str, requester_name: str, reviewer_name: str, 
-                                       cycle_name: str, is_external: bool = False) -> bool:
+
+def send_feedback_submitted_notification(
+    requester_email: str,
+    requester_name: str,
+    reviewer_name: str,
+    cycle_name: str,
+    is_external: bool = False,
+) -> bool:
     """Send notification when feedback is submitted by a reviewer."""
-    
+
     reviewer_type = "external stakeholder" if is_external else "colleague"
-    
+
     subject = f"Feedback received from {reviewer_type} for {cycle_name}"
-    
+
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -688,7 +754,7 @@ def send_feedback_submitted_notification(requester_email: str, requester_name: s
             <p>Thank you for participating in the 360-degree feedback process!</p>
             
             <p>Best regards,<br>
-            The HR Team</p>
+            Talent Management</p>
         </div>
         
         <div class="footer">
@@ -697,13 +763,21 @@ def send_feedback_submitted_notification(requester_email: str, requester_name: s
     </body>
     </html>
     """
-    
-    return send_email(requester_email, subject, html_body, None, "feedback_submitted_notification")
 
-def send_cycle_deadline_reminder(user_email: str, user_name: str, deadline_type: str, 
-                                deadline_date: str, days_remaining: int) -> bool:
+    return send_email(
+        requester_email, subject, html_body, None, "feedback_submitted_notification"
+    )
+
+
+def send_cycle_deadline_reminder(
+    user_email: str,
+    user_name: str,
+    deadline_type: str,
+    deadline_date: str,
+    days_remaining: int,
+) -> bool:
     """Send reminder email about approaching deadlines."""
-    
+
     if deadline_type == "nomination":
         subject = f"Reminder: {days_remaining} days left to submit feedback nominations"
         action = "submit your feedback nominations"
@@ -716,10 +790,10 @@ def send_cycle_deadline_reminder(user_email: str, user_name: str, deadline_type:
         subject = f"Reminder: {days_remaining} days left for feedback cycle"
         action = "complete your pending tasks"
         page = "dashboard"
-    
+
     # Use localhost for development, can be configured later
     app_url = "http://localhost:8501"
-    
+
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -760,7 +834,7 @@ def send_cycle_deadline_reminder(user_email: str, user_name: str, deadline_type:
             <p>Don't miss the deadline! Please complete your tasks promptly.</p>
             
             <p>Best regards,<br>
-            The HR Team</p>
+            Talent Management</p>
         </div>
         
         <div class="footer">
@@ -769,57 +843,65 @@ def send_cycle_deadline_reminder(user_email: str, user_name: str, deadline_type:
     </body>
     </html>
     """
-    
+
     return send_email(user_email, subject, html_body, None, "deadline_reminder")
 
-def send_manual_reminder(to_emails: List[str], subject: str, html_body: str, 
-                        text_body: Optional[str] = None) -> Dict[str, bool]:
+
+def send_manual_reminder(
+    to_emails: List[str], subject: str, html_body: str, text_body: Optional[str] = None
+) -> Dict[str, bool]:
     """
     Send manual reminder emails to multiple recipients.
-    
+
     Args:
         to_emails: List of recipient email addresses
         subject: Email subject line
         html_body: HTML content of email
         text_body: Plain text version (optional)
-        
+
     Returns:
         Dict mapping email addresses to success status
     """
     results = {}
-    
+
     for email in to_emails:
-        success = send_email(email.strip(), subject, html_body, text_body, "manual_reminder")
+        success = send_email(
+            email.strip(), subject, html_body, text_body, "manual_reminder"
+        )
         results[email.strip()] = success
-    
+
     return results
+
 
 def get_email_log(limit: int = 100) -> List[Dict[str, Any]]:
     """Retrieve recent email log entries for debugging and tracking."""
     try:
         conn = sqlite3.connect("feedback_app.db")
         cursor = conn.cursor()
-        
-        cursor.execute("""
+
+        cursor.execute(
+            """
             SELECT id, to_email, subject, email_type, sent_at, success, error_message, sender_email
             FROM sent_emails_log
             ORDER BY sent_at DESC
             LIMIT ?
-        """, (limit,))
-        
+        """,
+            (limit,),
+        )
+
         rows = cursor.fetchall()
         conn.close()
-        
+
         return [
             {
                 "id": row[0],
                 "to_email": row[1],
-                "subject": row[2], 
+                "subject": row[2],
                 "email_type": row[3],
                 "sent_at": row[4],
                 "success": bool(row[5]),
                 "error_message": row[6],
-                "sender_email": row[7]
+                "sender_email": row[7],
             }
             for row in rows
         ]
@@ -827,8 +909,16 @@ def get_email_log(limit: int = 100) -> List[Dict[str, Any]]:
         logger.error(f"Failed to retrieve email log: {e}")
         return []
 
+
 # Legacy compatibility functions (keeping existing function signatures)
-def send_external_stakeholder_invitation(to_email, requester_name, requester_vertical, cycle_name, token, app_url="https://360feedbacktool.streamlit.app/"):
+def send_external_stakeholder_invitation(
+    to_email,
+    requester_name,
+    requester_vertical,
+    cycle_name,
+    token,
+    app_url="https://360feedbacktool.streamlit.app/",
+):
     """Legacy function - redirects to new send_external_stakeholder_invite."""
     return send_external_stakeholder_invite(
         external_email=to_email,
@@ -837,8 +927,9 @@ def send_external_stakeholder_invitation(to_email, requester_name, requester_ver
         cycle_name=cycle_name,
         token=token,
         feedback_deadline="",
-        requester_vertical=requester_vertical
+        requester_vertical=requester_vertical,
     )
+
 
 def send_feedback_request_email(to_email, requester_name, app_url=""):
     """Legacy function - redirects to new send_nominee_invite."""
@@ -848,8 +939,9 @@ def send_feedback_request_email(to_email, requester_name, app_url=""):
         requester_name=requester_name,
         cycle_name="",
         feedback_deadline="",
-        relationship_type=""
+        relationship_type="",
     )
+
 
 def send_reminder_email(to_email, pending_count, app_url=""):
     """Legacy function for sending reminder emails."""
@@ -858,8 +950,9 @@ def send_reminder_email(to_email, pending_count, app_url=""):
         user_name="",
         deadline_type="feedback",
         deadline_date="",
-        days_remaining=pending_count
+        days_remaining=pending_count,
     )
+
 
 def send_approval_needed_email(manager_email, requester_name):
     """Legacy function - redirects to new send_manager_approval_request."""
@@ -868,17 +961,21 @@ def send_approval_needed_email(manager_email, requester_name):
         manager_name="",
         requester_name=requester_name,
         nominees=[],
-        cycle_name=""
+        cycle_name="",
     )
+
 
 def send_rejection_notice_email(requester_email, reviewer_name, rejection_reason):
     """Legacy function - redirects to new send_nomination_rejected."""
     return send_nomination_rejected(
         requester_email=requester_email,
         requester_name="",
-        rejected_nominees=[{"reviewer_name": reviewer_name, "rejection_reason": rejection_reason}],
-        cycle_name=""
+        rejected_nominees=[
+            {"reviewer_name": reviewer_name, "rejection_reason": rejection_reason}
+        ],
+        cycle_name="",
     )
+
 
 def send_password_reset_email(email, first_name, reset_token):
     """Send password reset email with token."""

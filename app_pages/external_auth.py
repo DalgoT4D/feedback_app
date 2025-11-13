@@ -11,9 +11,7 @@ from services.db_helper import (
 )
 
 st.set_page_config(
-    page_title="External Stakeholder Login",
-    page_icon="🤝",
-    layout="centered"
+    page_title="External Stakeholder Login", page_icon="🤝", layout="centered"
 )
 
 # Display logo and title
@@ -28,17 +26,22 @@ if "external_token_data" not in st.session_state:
     st.session_state["external_token_data"] = None
 
 # If already authenticated as external, show options
-if st.session_state["external_authenticated"] and st.session_state["external_token_data"]:
+if (
+    st.session_state["external_authenticated"]
+    and st.session_state["external_token_data"]
+):
     token_data = st.session_state["external_token_data"]
-    
+
     st.success("✅ Authenticated as External Stakeholder")
 
     # Auto-accept: external stakeholders do not need to approve
-    if token_data['status'] == 'pending':
+    if token_data["status"] == "pending":
         if accept_external_stakeholder_request(token_data):
             st.session_state["external_token_data"]["status"] = "accepted"
         else:
-            st.warning("We couldn't auto-accept your request. You can still proceed to the form.")
+            st.warning(
+                "We couldn't auto-accept your request. You can still proceed to the form."
+            )
 
     # Show only the feedback deadline info
     active_cycle = get_active_review_cycle()
@@ -53,10 +56,10 @@ if st.session_state["external_authenticated"] and st.session_state["external_tok
     )
 
     if st.button("Provide Feedback", type="primary", use_container_width=True):
-            st.switch_page("app_pages/external_feedback.py")
+        st.switch_page("app_pages/external_feedback.py")
 
     st.markdown("---")
-    
+
     # Back to main login option
     if st.button("← Return to Main Login", key="back_to_main"):
         # Clear external session data
@@ -71,46 +74,51 @@ else:
     # Authentication form
     st.subheader("Enter Your Credentials")
     st.info("Please enter the email address and token from your invitation email.")
-    
+
     # Back button
     if st.button("← Back to Login Options"):
         st.session_state["login_type"] = None
         st.switch_page("main.py")
-    
+
     with st.form("external_auth_form"):
         email = st.text_input(
             "Email Address",
             placeholder="Enter the email where you received the invitation",
-            help="This should match the email address where you received the feedback request"
+            help="This should match the email address where you received the feedback request",
         )
-        
+
         token = st.text_input(
             "Access Token",
             placeholder="Enter the token from your invitation email",
-            help="Copy and paste the token exactly as it appears in your email"
+            help="Copy and paste the token exactly as it appears in your email",
         )
-        
+
         submit_auth = st.form_submit_button("Authenticate", type="primary")
-        
+
         if submit_auth:
             if not email or not token:
                 st.error("Please enter both email address and token.")
             else:
                 # Validate the token
                 token_data = validate_external_token(email.strip(), token.strip())
-                
+
                 if token_data:
                     st.session_state["external_authenticated"] = True
                     st.session_state["external_token_data"] = token_data
                     st.success("Authentication successful! Redirecting...")
                     st.rerun()
                 else:
-                    st.error("Invalid email or token. Please check your credentials and try again.")
-                    st.info("Make sure you're using the exact email and token from your invitation.")
+                    st.error(
+                        "Invalid email or token. Please check your credentials and try again."
+                    )
+                    st.info(
+                        "Make sure you're using the exact email and token from your invitation."
+                    )
 
 # Help section
 with st.expander("❓ Need Help?"):
-    st.markdown("""
+    st.markdown(
+        """
     **Common Issues:**
     
     - **Token not working?** Make sure you copy the entire token exactly as it appears in your email
@@ -124,8 +132,9 @@ with st.expander("❓ Need Help?"):
     - You can decline to participate if needed
     - Your token does not expire
     
-    **Questions?** Contact the HR team for assistance.
-    """)
+    **Questions?** Contact Diana for assistance.
+    """
+    )
 
 # Footer
 st.markdown("---")

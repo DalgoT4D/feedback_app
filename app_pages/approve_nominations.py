@@ -4,6 +4,7 @@ from services.db_helper import (
     approve_reject_feedback_request,
     get_active_review_cycle,
 )
+from utils.badge_utils import update_local_badge
 
 st.title("Approve Team Nominations")
 
@@ -11,7 +12,7 @@ st.title("Approve Team Nominations")
 active_cycle = get_active_review_cycle()
 if not active_cycle:
     st.warning(
-        "[Warning] No active review cycle found. Contact HR to start a new feedback cycle."
+        "No active review cycle found. Contact Diana to start a new feedback cycle."
     )
 else:
     st.info(
@@ -25,7 +26,7 @@ else:
     pending_approvals = get_pending_approvals_for_manager(user_id)
 
     if not pending_approvals:
-        st.success("[Complete] No pending nominations to review!")
+        st.success("No pending nominations to review!")
         st.info(
             "When your team members submit feedback requests, they will appear here for your approval."
         )
@@ -77,11 +78,21 @@ else:
                             if approve_reject_feedback_request(
                                 request_id, user_id, "approve"
                             ):
-                                st.success("[Success] Request approved!")
+                                st.success("Request approved!")
+
+                                # Check if this was the last pending approval
+                                remaining_approvals = get_pending_approvals_for_manager(
+                                    user_id
+                                )
+                                if (
+                                    len(remaining_approvals) <= 1
+                                ):  # Account for just-approved item
+                                    update_local_badge("approvals", completed=True)
+
                                 # Refresh list to remove the approved item
                                 st.rerun()
                             else:
-                                st.error("[Error] Error approving request.")
+                                st.error("Error approving request.")
 
                     with col_reject:
                         if st.button(f"Reject", key=f"reject_{request_id}"):
@@ -110,23 +121,35 @@ else:
                                     if approve_reject_feedback_request(
                                         request_id, user_id, "reject", rejection_reason
                                     ):
-                                        st.success("[Success] Request rejected!")
+                                        st.success("Request rejected!")
                                         st.session_state[
                                             f"show_reject_form_{request_id}"
                                         ] = False
+
+                                        # Check if this was the last pending approval
+                                        remaining_approvals = (
+                                            get_pending_approvals_for_manager(user_id)
+                                        )
+                                        if (
+                                            len(remaining_approvals) <= 1
+                                        ):  # Account for just-rejected item
+                                            update_local_badge(
+                                                "approvals", completed=True
+                                            )
+
                                         # Refresh list to remove the rejected item
                                         st.rerun()
                                     else:
-                                        st.error("[Error] Error rejecting request.")
+                                        st.error("Error rejecting request.")
                                 else:
                                     st.error("Please provide a reason for rejection.")
 
                             if cancel_rejection:
-                                st.session_state[f"show_reject_form_{request_id}"] = False
+                                st.session_state[f"show_reject_form_{request_id}"] = (
+                                    False
+                                )
 
                 st.divider()
-
-            st.divider()
 
     st.markdown("---")
     st.subheader("Approval Guidelines")

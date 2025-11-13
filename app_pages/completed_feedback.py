@@ -87,7 +87,7 @@ with tab1:
             FROM feedback_requests fr
             JOIN feedback_responses resp ON fr.request_id = resp.request_id
             JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
-            WHERE fr.status = 'completed' 
+            WHERE fr.workflow_state = 'completed' 
                 AND DATE(fr.completed_at) BETWEEN ? AND ?
                 {cycle_filter}
         """,
@@ -124,7 +124,7 @@ with tab1:
                     COUNT(fr.request_id) as completions,
                     COUNT(DISTINCT fr.requester_id) as unique_recipients
                 FROM feedback_requests fr
-                WHERE fr.status = 'completed' 
+                WHERE fr.workflow_state = 'completed' 
                     AND DATE(fr.completed_at) BETWEEN ? AND ?
                     {cycle_filter}
                 GROUP BY DATE(fr.completed_at)
@@ -154,7 +154,7 @@ with tab1:
                 FROM feedback_requests fr
                 JOIN users u ON fr.requester_id = u.user_type_id
                 JOIN feedback_responses resp ON fr.request_id = resp.request_id
-                WHERE fr.status = 'completed' 
+                WHERE fr.workflow_state = 'completed' 
                     AND DATE(fr.completed_at) BETWEEN ? AND ?
                     {cycle_filter}
                 GROUP BY u.vertical
@@ -227,7 +227,7 @@ with tab2:
             LEFT JOIN users u2 ON fr.reviewer_id = u2.user_type_id
             JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
             JOIN feedback_responses resp ON fr.request_id = resp.request_id
-            WHERE fr.status = 'completed' 
+            WHERE fr.workflow_state = 'completed' 
                 AND DATE(fr.completed_at) BETWEEN ? AND ?
         """
 
@@ -340,7 +340,7 @@ with tab3:
             FROM users u
             JOIN feedback_requests fr ON u.user_type_id = fr.requester_id
             JOIN feedback_responses resp ON fr.request_id = resp.request_id
-            WHERE fr.status = 'completed' 
+            WHERE fr.workflow_state = 'completed' 
                 AND DATE(fr.completed_at) BETWEEN ? AND ?
                 {cycle_filter if selected_cycle_id else ""}
             GROUP BY u.user_type_id, u.first_name, u.last_name, u.vertical, u.designation
@@ -446,7 +446,7 @@ with tab4:
                 AVG(resp.rating_value) as avg_rating
             FROM feedback_requests fr
             JOIN feedback_responses resp ON fr.request_id = resp.request_id
-            WHERE fr.status = 'completed' 
+            WHERE fr.workflow_state = 'completed' 
                 AND DATE(fr.completed_at) BETWEEN ? AND ?
                 {cycle_filter if selected_cycle_id else ""}
             GROUP BY fr.relationship_type
@@ -485,7 +485,7 @@ with tab4:
                 COUNT(*) as count
             FROM feedback_requests fr
             JOIN feedback_responses resp ON fr.request_id = resp.request_id
-            WHERE fr.status = 'completed' 
+            WHERE fr.workflow_state = 'completed' 
                 AND resp.rating_value IS NOT NULL
                 AND DATE(fr.completed_at) BETWEEN ? AND ?
                 {cycle_filter if selected_cycle_id else ""}
@@ -520,7 +520,7 @@ with tab4:
                 COUNT(fr.request_id) as completions,
                 COUNT(DISTINCT fr.requester_id) as unique_recipients
             FROM feedback_requests fr
-            WHERE fr.status = 'completed' 
+            WHERE fr.workflow_state = 'completed' 
                 AND DATE(fr.completed_at) BETWEEN ? AND ?
                 {cycle_filter if selected_cycle_id else ""}
             GROUP BY strftime('%Y-%m', fr.completed_at)
@@ -558,18 +558,19 @@ with tab5:
                 "Selected Date Range",
             ],
         )
-        
+
         # Department filter for export, only shown if "Selected Department" is chosen
         export_dept_filter = []
         if export_scope == "Selected Department":
-            conn = get_connection() # Ensure connection is available
+            conn = get_connection()  # Ensure connection is available
             departments = conn.execute(
                 "SELECT DISTINCT vertical FROM users WHERE is_active = 1 ORDER BY vertical"
             ).fetchall()
             export_dept_filter = st.multiselect(
-                "Select Department(s) for Export:", [d[0] for d in departments if d[0]], default=[]
+                "Select Department(s) for Export:",
+                [d[0] for d in departments if d[0]],
+                default=[],
             )
-
 
     with col2:
         include_options = st.multiselect(
@@ -610,7 +611,7 @@ with tab5:
                 JOIN feedback_responses resp ON fr.request_id = resp.request_id
                 JOIN feedback_questions fq ON resp.question_id = fq.question_id
                 JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
-                WHERE fr.status = 'completed'
+                WHERE fr.workflow_state = 'completed'
             """
 
             export_params = []
@@ -624,12 +625,11 @@ with tab5:
             if export_scope == "Selected Cycle Only" and selected_cycle_id:
                 export_query += " AND fr.cycle_id = ?"
                 export_params.append(selected_cycle_id)
-            
+
             if export_scope == "Selected Department" and export_dept_filter:
                 placeholders = ",".join(["?" for _ in export_dept_filter])
                 export_query += f" AND u1.vertical IN ({placeholders})"
                 export_params.extend(export_dept_filter)
-
 
             export_query += (
                 " ORDER BY fr.completed_at DESC, fr.request_id, fq.sort_order"
@@ -693,7 +693,7 @@ with tab5:
                 )
 
                 st.success(
-                    f"[Success] Export generated successfully! {len(export_data)} records ready for download."
+                    f"Export generated successfully! {len(export_data)} records ready for download."
                 )
             else:
                 st.warning("No data available for export with current filters")

@@ -1,3 +1,19 @@
+[server]
+# Optimize for Community Cloud performance
+enableCORS = false
+enableXsrfProtection = false
+
+[client]
+# Reduce UI update frequency
+toolbarMode = "minimal"
+showErrorDetails = false
+
+[runner]
+# Optimize script running
+fastReruns = true
+enforceSerializableSessionState = false
+
 [theme]
+# Keep original company branding
 base = "light"
 primaryColor = "#1E4796"

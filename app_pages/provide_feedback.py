@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 from services.db_helper import (
     get_pending_reviews_for_user,
     get_questions_by_relationship_type,
@@ -8,6 +9,7 @@ from services.db_helper import (
     get_active_review_cycle,
     check_user_deadline_enforcement,
 )
+from utils.badge_utils import update_local_badge
 
 st.title("Complete Feedback")
 
@@ -166,7 +168,9 @@ if selected_idx is not None:
                     success_count += 1
 
             if success_count == len(responses):
-                st.success("💾 Draft saved successfully! You can continue later.")
+                st.success("💾 Draft saved successfully! Returning to reviews list...")
+                time.sleep(1)
+                st.switch_page("app_pages/my_reviews.py")
             else:
                 st.error("❌ Error saving some responses. Please try again.")
 
@@ -180,9 +184,15 @@ if selected_idx is not None:
                         "Your feedback has been recorded and will be shared anonymously."
                     )
 
-                    # Clear from pending reviews and refresh
-                    if st.button("Continue to Next Review"):
-                        st.rerun()
+                    # Check if this was the last pending review
+                    remaining_reviews = get_pending_reviews_for_user(user_id)
+                    if len(remaining_reviews) <= 1:  # Account for just-completed review
+                        update_local_badge("reviews", completed=True)
+
+                    # Auto-redirect back to reviews list after successful submission
+                    st.success("Redirecting back to reviews list...")
+                    time.sleep(1)
+                    st.switch_page("app_pages/my_reviews.py")
                 else:
                     st.error("❌ Error submitting feedback. Please try again.")
 

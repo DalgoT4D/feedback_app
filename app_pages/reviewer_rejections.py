@@ -91,7 +91,7 @@ else:
             col1, col2 = st.columns([2, 1])
 
             with col1:
-                st.write("**[Rejection] Rejection Details:**")
+                st.write("**Rejection Details:**")
                 st.write(f"**Reason:** {rejection['rejection_reason']}")
                 st.write(
                     f"**Date:** {rejection['rejection_date'][:10] if rejection['rejection_date'] else 'N/A'}"
@@ -102,14 +102,14 @@ else:
                 st.write(f"**Cycle:** {rejection['cycle_name']}")
 
             with col2:
-                st.write("**[People] People Involved:**")
+                st.write("**People Involved:**")
                 st.write(f"**Requester:** {rejection['requester_name']}")
                 st.write(f"**Requester Dept:** {rejection['requester_vertical']}")
                 st.write(f"**Reviewer:** {rejection['reviewer_name']}")
                 st.write(f"**Reviewer Dept:** {rejection['reviewer_vertical']}")
 
                 # Contact information
-                st.write("**[Contact] Contact Info:**")
+                st.write("**Contact Info:**")
                 st.code(f"Requester: {rejection['requester_email']}")
                 st.code(f"Reviewer: {rejection['reviewer_email']}")
 
@@ -117,7 +117,7 @@ else:
     st.markdown("---")
     st.subheader("Export Data")
 
-    if st.button("[Export] Export to Excel", type="secondary"):
+    if st.button("Export to Excel", type="secondary"):
         # Prepare data for export
         export_data = []
         for rejection in filtered_rejections:

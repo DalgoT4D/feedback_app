@@ -16,7 +16,7 @@ with col1:
     if active_cycle:
         st.info(f"**Active Cycle:** {active_cycle['cycle_display_name']}")
     else:
-        st.warning("[Warning] No active review cycle")
+        st.warning("No active review cycle")
 
 with col2:
     cycle_options = ["All Cycles", "Active Only"] + [
@@ -135,8 +135,8 @@ with tab1:
                 u.vertical,
                 COUNT(DISTINCT u.user_type_id) as total_users,
                 COUNT(DISTINCT fr.requester_id) as participating_users,
-                COUNT(DISTINCT CASE WHEN fr.status = 'completed' THEN fr.requester_id END) as completed_users,
-                COUNT(DISTINCT CASE WHEN fr.status = 'completed' THEN fr.reviewer_id END) as active_reviewers
+                COUNT(DISTINCT CASE WHEN fr.workflow_state = 'completed' THEN fr.requester_id END) as completed_users,
+                COUNT(DISTINCT CASE WHEN fr.workflow_state = 'completed' THEN fr.reviewer_id END) as active_reviewers
             FROM users u
             LEFT JOIN feedback_requests fr ON u.user_type_id = fr.requester_id 
                 AND fr.cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
@@ -399,9 +399,7 @@ with tab3:
                             st.write(f"**Last Approval:** {manager[7][:10]}")
 
                         if manager[5] > 0:
-                            st.warning(
-                                f"[Warning] {manager[5]} approvals still pending"
-                            )
+                            st.warning(f"{manager[5]} approvals still pending")
         else:
             st.info("No manager approval activity found")
 
@@ -459,7 +457,7 @@ with tab4:
             FROM feedback_requests fr
             JOIN users u ON fr.reviewer_id = u.user_type_id
             LEFT JOIN feedback_responses resp ON fr.request_id = resp.request_id
-            WHERE fr.status = 'completed' 
+            WHERE fr.workflow_state = 'completed' 
                 AND fr.cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
             GROUP BY fr.reviewer_id, u.first_name, u.last_name, u.vertical
             ORDER BY completed_reviews DESC
@@ -507,7 +505,7 @@ with tab4:
             FROM feedback_requests fr
             JOIN users u ON fr.reviewer_id = u.user_type_id
             LEFT JOIN draft_responses dr ON fr.request_id = dr.request_id
-            WHERE fr.status = 'approved' AND fr.approval_status = 'approved' AND fr.reviewer_status = 'accepted'
+            WHERE fr.approval_status = 'approved' AND fr.approval_status = 'approved' AND fr.reviewer_status = 'accepted'
                 AND fr.cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
             GROUP BY fr.reviewer_id, u.first_name, u.last_name, u.email, u.vertical
             ORDER BY pending_count DESC, oldest_request ASC
@@ -543,7 +541,7 @@ with tab4:
                     ):
                         st.info("Reminder sent!")
         else:
-            st.success("[Complete] No pending feedback reviews!")
+            st.success("No pending feedback reviews!")
 
     except Exception as e:
         st.error(f"Error loading feedback data: {e}")
@@ -565,7 +563,7 @@ with tab5:
             FROM feedback_requests fr
             JOIN users u1 ON fr.reviewer_id = u1.user_type_id
             JOIN users u2 ON fr.requester_id = u2.user_type_id
-            WHERE fr.status = 'completed' AND DATE(fr.completed_at) >= ?
+            WHERE fr.workflow_state = 'completed' AND DATE(fr.completed_at) >= ?
             
             UNION ALL
             

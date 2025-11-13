@@ -16,6 +16,7 @@ from services.db_helper import (
     can_user_request_feedback,
 )
 from services.db_helper import create_feedback_request_fixed
+from utils.badge_utils import update_local_badge
 
 st.title("Request 360° Feedback")
 
@@ -47,7 +48,7 @@ st.markdown(
 active_cycle = get_active_review_cycle()
 if not active_cycle:
     st.error(
-        "[Warning] No active review cycle found. Please contact HR to start a new feedback cycle."
+        "No active review cycle found. Please contact Diana to start a new feedback cycle."
     )
     st.stop()
 
@@ -157,9 +158,26 @@ for user in users:
         user_copy["is_manager"] = False
         user_copy["at_limit"] = False
         user_copy["is_selectable"] = False
-        user_copy["display_name"] = (
-            f"[Already Nominated] {user['name']} ({user['designation']})"
-        )
+        # Check if this user was rejected and by whom
+        rejection_status = None
+        for rejection in rejected_nominations:
+            if rejection.get("reviewer_id") == user["user_type_id"] or rejection.get(
+                "external_email"
+            ) == user.get("email"):
+                if rejection["workflow_state"] == "manager_rejected":
+                    rejection_status = "Rejected by Manager"
+                elif rejection["workflow_state"] == "reviewer_rejected":
+                    rejection_status = "Rejected by Nominee"
+                break
+
+        if rejection_status:
+            user_copy["display_name"] = (
+                f"[{rejection_status}] {user['name']} ({user['designation']})"
+            )
+        else:
+            user_copy["display_name"] = (
+                f"[Already Nominated] {user['name']} ({user['designation']})"
+            )
     elif user["user_type_id"] == manager_id:
         user_copy["already_nominated"] = False
         user_copy["is_manager"] = True
@@ -238,7 +256,7 @@ if selectable_users:
     # Respect remaining slots: ignore any selections if no slots left
     valid_internal_reviewers = [] if remaining_slots <= 0 else internal_reviewers
 else:
-    st.warning("[Warning] No reviewers available for selection at this time.")
+    st.warning("No reviewers available for selection at this time.")
     valid_internal_reviewers = []
 
 internal_reviewers = valid_internal_reviewers
@@ -260,11 +278,11 @@ if can_request_external and remaining_slots > 0:
 
         if external_reviewer_clean == manager_email:
             st.error(
-                f"[Error] You cannot nominate your direct manager ({external_reviewer}) as an external stakeholder."
+                f"You cannot nominate your direct manager ({external_reviewer}) as an external stakeholder."
             )
         elif external_reviewer_clean in already_nominated_lower:
             st.error(
-                f"[Error] You have already nominated {external_reviewer}. Please enter a different email address."
+                f"You have already nominated {external_reviewer}. Please enter a different email address."
             )
         else:
             selected_reviewers.append(
@@ -305,7 +323,7 @@ for reviewer_identifier, relationship_type in selected_reviewers:
 if duplicate_labels:
     duplicates_display = ", ".join(duplicate_labels)
     st.error(
-        f"[Error] Duplicate reviewer{'s' if len(duplicate_labels) > 1 else ''} detected: {duplicates_display}. "
+        f"Duplicate reviewer{'s' if len(duplicate_labels) > 1 else ''} detected: {duplicates_display}. "
         "Each reviewer can only be nominated once per cycle."
     )
 
@@ -318,7 +336,7 @@ st.subheader("Review Your Selection")
 if remaining_slots <= 0:
     st.info("You have no nomination slots remaining for this cycle.")
 elif len(selected_reviewers) == 0:
-    st.warning("[Warning] Please select at least one reviewer to add.")
+    st.warning("Please select at least one reviewer to add.")
 elif duplicate_detected:
     st.info("Remove duplicate reviewers to continue.")
 elif len(selected_reviewers) + total_nominations > 4:
@@ -328,7 +346,7 @@ elif len(selected_reviewers) + total_nominations > 4:
         f"You can add {remaining_slots} more {plural}. Deselect some selections to continue."
     )
 else:
-    st.success(f"[Success] You have selected {len(selected_reviewers)} reviewers.")
+    st.success(f"You have selected {len(selected_reviewers)} reviewers.")
 
     # Get automatically assigned relationships
     reviewer_identifiers = [
@@ -340,14 +358,10 @@ else:
 
     # Merge in external selections that won't be returned by relationship mapper
     external_pairs = [
-        (rid, rtype)
-        for (rid, rtype) in selected_reviewers
-        if not isinstance(rid, int)
+        (rid, rtype) for (rid, rtype) in selected_reviewers if not isinstance(rid, int)
     ]
     # Build combined list, preserving mapped internal relationships
-    mapped_ids = set(
-        rid for (rid, _rtype) in relationships_with_preview
-    )
+    mapped_ids = set(rid for (rid, _rtype) in relationships_with_preview)
     combined_pairs = list(relationships_with_preview)
     for rid, rtype in external_pairs:
         if rid not in mapped_ids:
@@ -355,7 +369,9 @@ else:
 
     # Show summary with relationships (internal mapped; externals explicit)
     st.write("**Selected Reviewers with Auto-Assigned Relationships:**")
-    st.info("Relationships are automatically determined based on organizational structure")
+    st.info(
+        "Relationships are automatically determined based on organizational structure"
+    )
 
     for reviewer_identifier, relationship_type in combined_pairs:
         if isinstance(reviewer_identifier, int):
@@ -377,10 +393,17 @@ else:
         )
 
         if success:
-            st.success("[Success] Feedback requests added successfully!")
+            st.success("Feedback requests added successfully!")
             st.info(
                 "Your new requests have been sent to your manager for approval. You will be notified once they are processed."
             )
+
+            # Check if user has completed all 4 nominations
+            updated_status = get_user_nominations_status(current_user_id)
+            if updated_status.get("total_count", 0) >= 4:
+                # User completed all nominations - remove badge locally
+                update_local_badge("nominations", completed=True)
+
             st.rerun()
         else:
             st.error(f"Error submitting requests: {message}")
@@ -409,28 +432,41 @@ if existing_nominations:
                 )
             with cols[1]:
                 if nomination["approval_status"] == "pending":
-                    st.warning("[Pending] Pending Approval")
+                    st.warning("Pending Approval")
                 elif nomination["approval_status"] == "approved":
-                    st.success("[Approved] Approved")
+                    st.success("Approved")
             with cols[2]:
                 if nomination["status"] == "completed":
-                    st.success("[Completed] Completed")
+                    st.success("Completed")
                 elif nomination["status"] == "approved":
-                    st.info("[In Progress] In Progress")
+                    st.info("In Progress")
                 else:
-                    st.info("[Pending] Pending")
+                    st.info("Pending")
             st.caption(f"Nominated on: {nomination['created_at'][:10]}")
 
 # Show rejected nominations
 if rejected_nominations:
     st.subheader("Rejected Nominations")
     st.warning(
-        "[Warning] Your manager has rejected some of your nominations. You can nominate different reviewers for the remaining slots."
+        "Your manager has rejected some of your nominations. You can nominate different reviewers for the remaining slots."
     )
 
     for rejection in rejected_nominations:
+        # Determine rejection type and source
+        if rejection["workflow_state"] == "manager_rejected":
+            rejection_by = "Rejected by Manager"
+            rejection_reason = rejection.get("rejection_reason", "No reason provided")
+        elif rejection["workflow_state"] == "reviewer_rejected":
+            rejection_by = "Rejected by Nominee"
+            rejection_reason = rejection.get(
+                "reviewer_rejection_reason", "No reason provided"
+            )
+        else:
+            rejection_by = "REJECTED"
+            rejection_reason = "Unknown reason"
+
         with st.expander(
-            f"[Rejected] {rejection['reviewer_name']} - {rejection['relationship_type'].replace('_', ' ').title()} (REJECTED)",
+            f" {rejection['reviewer_name']} - {rejection['relationship_type'].replace('_', ' ').title()} ({rejection_by})",
             expanded=False,
         ):
             cols = st.columns([2, 1])
@@ -442,22 +478,20 @@ if rejected_nominations:
                 st.write(
                     f"**Relationship:** {rejection['relationship_type'].replace('_', ' ').title()}"
                 )
-                if rejection["rejection_reason"]:
-                    st.error(f"**Rejection Reason:** {rejection['rejection_reason']}")
+                if rejection_reason and rejection_reason != "No reason provided":
+                    st.error(f"**Rejection Reason:** {rejection_reason}")
                 else:
                     st.error("**Rejection Reason:** No specific reason provided")
             with cols[1]:
-                st.error("[Rejected] Rejected by Manager")
+                st.error("Rejected by Manager")
             st.caption(f"Nominated on: {rejection['created_at'][:10]}")
 
     if remaining_slots > 0:
         st.info(
-            f"[Available] You can nominate **{remaining_slots} more reviewer{'s' if remaining_slots > 1 else ''}** for this cycle."
+            f"You can nominate **{remaining_slots} more reviewer{'s' if remaining_slots > 1 else ''}** for this cycle."
         )
     else:
-        st.success(
-            "[Complete] You've nominated the maximum of 4 reviewers for this cycle!"
-        )
+        st.success("You've nominated the maximum of 4 reviewers for this cycle!")
         st.stop()
 else:
     st.info("You can nominate up to 4 reviewers total.")

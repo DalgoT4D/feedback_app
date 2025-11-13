@@ -153,7 +153,7 @@ with tab2:
     JOIN users u2 ON fr.reviewer_id = u2.user_type_id
     JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
     LEFT JOIN feedback_responses resp ON fr.request_id = resp.request_id
-    WHERE fr.status = 'completed'
+    WHERE fr.workflow_state = 'completed'
     GROUP BY fr.request_id, u1.first_name, u1.last_name, u2.first_name, u2.last_name, 
              fr.relationship_type, fr.completed_at, rc.cycle_display_name
     ORDER BY fr.completed_at DESC
@@ -207,7 +207,7 @@ with tab3:
         FROM draft_responses
         GROUP BY request_id
     ) draft_count ON fr.request_id = draft_count.request_id
-    WHERE fr.status = 'approved' AND fr.approval_status = 'approved'
+    WHERE fr.approval_status = 'approved' AND fr.approval_status = 'approved'
     ORDER BY fr.created_at ASC
     """
     
@@ -286,7 +286,7 @@ with tab4:
     SELECT 
         u.vertical,
         COUNT(*) as total_requests,
-        SUM(CASE WHEN fr.status = 'completed' THEN 1 ELSE 0 END) as completed
+        SUM(CASE WHEN fr.workflow_state = 'completed' THEN 1 ELSE 0 END) as completed
     FROM feedback_requests fr
     JOIN users u ON fr.requester_id = u.user_type_id
     GROUP BY u.vertical

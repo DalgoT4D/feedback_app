@@ -81,9 +81,9 @@ responses = {}
 all_required_answered = True
 
 for question in questions:
-    question_id = question['question_id']
-    question_text = question['question_text']
-    question_type = question['question_type']
+    question_id = question[0]
+    question_text = question[1]
+    question_type = question[2]
     
     st.markdown(f"**{question_text}**")
     
@@ -202,11 +202,12 @@ if st.session_state.get("show_submit_confirmation", False):
         # Show summary of responses
         st.write("**Summary of your responses:**")
         for question in questions:
-            question_id = question['question_id']
-            question_text = question['question_text']
+            question_id = question[0]
+            question_text = question[1]
+            question_type = question[2]
             response_data = responses.get(question_id, {})
             
-            if question['question_type'] == 'rating':
+            if question_type == 'rating':
                 rating = response_data.get('rating_value', 'N/A')
                 st.write(f"• {question_text}: **{rating}/5**")
             else:

@@ -44,7 +44,8 @@ conn = get_connection()
 
 
 def export_feedback(selected_cycle_ids):
-    placeholders = ",".join(["?"] * len(selected_cycle_ids))
+    # Convert cycle IDs to comma-separated string for LibSQL compatibility
+    cycle_ids_str = ",".join(str(cycle_id) for cycle_id in selected_cycle_ids)
     query = f"""
         SELECT 
             fr.request_id,
@@ -68,10 +69,10 @@ def export_feedback(selected_cycle_ids):
         LEFT JOIN users rev ON fr.reviewer_id = rev.user_type_id
         JOIN feedback_responses resp ON fr.request_id = resp.request_id
         JOIN feedback_questions fq ON resp.question_id = fq.question_id
-        WHERE fr.status = 'completed' AND fr.cycle_id IN ({placeholders})
+        WHERE fr.workflow_state = 'completed' AND fr.cycle_id IN ({cycle_ids_str})
         ORDER BY rc.cycle_display_name, fr.request_id, fq.question_text
     """
-    rows = conn.execute(query, tuple(selected_cycle_ids)).fetchall()
+    rows = conn.execute(query).fetchall()
     cols = [
         "request_id",
         "cycle_display_name",
@@ -94,7 +95,8 @@ def export_feedback(selected_cycle_ids):
 
 
 def export_nominations(selected_cycle_ids):
-    placeholders = ",".join(["?"] * len(selected_cycle_ids))
+    # Convert cycle IDs to comma-separated string for LibSQL compatibility
+    cycle_ids_str = ",".join(str(cycle_id) for cycle_id in selected_cycle_ids)
     query = f"""
         SELECT 
             fr.request_id,
@@ -106,10 +108,10 @@ def export_nominations(selected_cycle_ids):
             COALESCE(rev.first_name || ' ' || rev.last_name, 'External Reviewer') as reviewer_name,
             COALESCE(rev.email, fr.external_reviewer_email) as reviewer_email,
             fr.relationship_type,
-            fr.status,
-            fr.approval_status,
-            fr.approval_date,
-            fr.rejection_reason,
+            fr.workflow_state as status,
+            fr.manager_decision as approval_status,
+            fr.manager_decision_date as approval_date,
+            fr.manager_rejection_reason as rejection_reason,
             fr.reviewer_status,
             fr.reviewer_response_date,
             fr.reviewer_rejection_reason,
@@ -118,10 +120,10 @@ def export_nominations(selected_cycle_ids):
         JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
         JOIN users req ON fr.requester_id = req.user_type_id
         LEFT JOIN users rev ON fr.reviewer_id = rev.user_type_id
-        WHERE fr.cycle_id IN ({placeholders})
+        WHERE fr.cycle_id IN ({cycle_ids_str})
         ORDER BY rc.cycle_display_name, fr.created_at
     """
-    rows = conn.execute(query, tuple(selected_cycle_ids)).fetchall()
+    rows = conn.execute(query).fetchall()
     cols = [
         "request_id",
         "cycle_display_name",
@@ -133,9 +135,9 @@ def export_nominations(selected_cycle_ids):
         "reviewer_email",
         "relationship_type",
         "status",
-        "approval_status",
+        "approval_status", 
         "approval_date",
-        "manager_rejection_reason",
+        "rejection_reason",
         "reviewer_status",
         "reviewer_response_date",
         "reviewer_rejection_reason",

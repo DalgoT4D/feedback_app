@@ -1,5 +1,6 @@
 import streamlit as st
 from services.db_helper import get_pending_reviewer_requests, handle_reviewer_response
+from utils.badge_utils import update_local_badge
 
 st.title("Review Requests")
 
@@ -10,13 +11,13 @@ user_name = f"{st.session_state['user_data']['first_name']} {st.session_state['u
 pending_requests = get_pending_reviewer_requests(current_user_id)
 
 if not pending_requests:
-    st.info("[Complete] You have no pending review requests to respond to.")
+    st.info("You have no pending review requests to respond to.")
     st.write(
         "Once colleagues nominate you for feedback and their managers approve, requests will appear here for your acceptance."
     )
 else:
     st.info(
-        f"[Pending] You have {len(pending_requests)} feedback request{'s' if len(pending_requests) > 1 else ''} waiting for your response."
+        f"You have {len(pending_requests)} feedback request{'s' if len(pending_requests) > 1 else ''} waiting for your response."
     )
     st.write(
         "**Please review each request and decide whether to accept or decline providing feedback.**"
@@ -52,6 +53,16 @@ else:
                         st.success(
                             "[Accepted] Request accepted! You can now complete the feedback."
                         )
+
+                        # Check if this was the last pending reviewer request
+                        remaining_requests = get_pending_reviewer_requests(
+                            current_user_id
+                        )
+                        if (
+                            len(remaining_requests) <= 1
+                        ):  # Account for just-accepted request
+                            update_local_badge("reviews", completed=True)
+
                         st.rerun()
                     else:
                         st.error(f"Error: {message}")
@@ -94,6 +105,16 @@ else:
                                 st.success(
                                     "[Declined] Request declined. Reason sent to HR for review."
                                 )
+
+                                # Check if this was the last pending reviewer request
+                                remaining_requests = get_pending_reviewer_requests(
+                                    current_user_id
+                                )
+                                if (
+                                    len(remaining_requests) <= 1
+                                ):  # Account for just-declined request
+                                    update_local_badge("reviews", completed=True)
+
                                 # Clear the form state
                                 if (
                                     f"show_decline_{request['request_id']}"

@@ -13,6 +13,24 @@ if not db_url or not auth_token:
 
 _connection = None
 
+# Performance optimization: simple cache for frequently accessed data
+def get_cached_value(cache_key, cache_duration_seconds=60):
+    """Get cached value if still fresh, None if expired or missing."""
+    if cache_key not in st.session_state:
+        return None
+    cached_data = st.session_state[cache_key]
+    if isinstance(cached_data, dict) and "timestamp" in cached_data:
+        if datetime.now().timestamp() - cached_data["timestamp"] < cache_duration_seconds:
+            return cached_data["data"]
+    return None
+
+def set_cached_value(cache_key, data, cache_duration_seconds=60):
+    """Cache a value with timestamp."""
+    st.session_state[cache_key] = {
+        "data": data,
+        "timestamp": datetime.now().timestamp()
+    }
+
 def get_connection():
     global _connection
     try:
@@ -569,7 +587,7 @@ def approve_reject_feedback_request_OLD(request_id, manager_id, action, rejectio
         if action == 'approve':
             update_query = """
                 UPDATE feedback_requests 
-                SET approval_status = 'approved', status = 'approved', 
+                SET approval_status = 'approved', workflow_state = 'pending_reviewer_acceptance', 
                     approved_by = ?, approval_date = CURRENT_TIMESTAMP
                 WHERE request_id = ?
             """
@@ -672,16 +690,24 @@ def get_draft_responses(request_id):
 def save_draft_response(request_id, question_id, response_value, rating_value=None):
     """Save draft response for partial completion."""
     conn = get_connection()
-    query = """
-        INSERT INTO draft_responses (request_id, question_id, response_value, rating_value)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(request_id, question_id) DO UPDATE SET
-        response_value = excluded.response_value,
-        rating_value = excluded.rating_value,
-        saved_at = CURRENT_TIMESTAMP
-    """
     try:
-        conn.execute(query, (request_id, question_id, response_value, rating_value))
+        # Escape values to prevent SQL injection
+        if response_value:
+            escaped_value = response_value.replace("'", "''")
+            response_value_sql = f"'{escaped_value}'"
+        else:
+            response_value_sql = "NULL"
+        rating_value_sql = str(rating_value) if rating_value is not None else "NULL"
+        
+        query = f"""
+            INSERT INTO draft_responses (request_id, question_id, response_value, rating_value)
+            VALUES ({request_id}, {question_id}, {response_value_sql}, {rating_value_sql})
+            ON CONFLICT(request_id, question_id) DO UPDATE SET
+            response_value = excluded.response_value,
+            rating_value = excluded.rating_value,
+            saved_at = CURRENT_TIMESTAMP
+        """
+        conn.execute(query)
         conn.commit()
         return True
     except Exception as e:
@@ -694,23 +720,30 @@ def submit_final_feedback(request_id, responses):
     
     conn = get_connection()
     try:
-        # Insert final responses
+        # Insert final responses using string formatting to avoid LibSQL parameter issues
         for question_id, response_data in responses.items():
-            response_query = """
+            # Safely handle values
+            response_val = response_data.get('response_value')
+            rating_val = response_data.get('rating_value')
+            
+            if response_val:
+                escaped_response = response_val.replace("'", "''")
+                response_sql = f"'{escaped_response}'"
+            else:
+                response_sql = "NULL"
+                
+            rating_sql = str(rating_val) if rating_val is not None else "NULL"
+            
+            response_query = f"""
                 INSERT INTO feedback_responses (request_id, question_id, response_value, rating_value)
-                VALUES (?, ?, ?, ?)
+                VALUES ({request_id}, {question_id}, {response_sql}, {rating_sql})
             """
-            conn.execute(response_query, (
-                request_id, 
-                question_id, 
-                response_data.get('response_value'), 
-                response_data.get('rating_value')
-            ))
+            conn.execute(response_query)
         
         # Update request status
         update_query = """
             UPDATE feedback_requests 
-            SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+            SET reviewer_status = 'completed', completed_at = CURRENT_TIMESTAMP
             WHERE request_id = ?
         """
         conn.execute(update_query, (request_id,))
@@ -766,7 +799,7 @@ def get_anonymized_feedback_for_user(user_id):
         FROM feedback_requests fr
         JOIN feedback_responses fres ON fr.request_id = fres.request_id
         JOIN feedback_questions fq ON fres.question_id = fq.question_id
-        WHERE fr.requester_id = ? AND fr.status = 'completed'
+        WHERE fr.requester_id = ? AND fr.workflow_state = 'completed'
         ORDER BY fr.request_id, fq.sort_order ASC
     """
     try:
@@ -797,11 +830,11 @@ def get_feedback_progress_for_user(user_id):
     query = """
         SELECT 
             COUNT(*) as total_requests,
-            COALESCE(SUM(CASE WHEN fr.status = 'completed' THEN 1 ELSE 0 END), 0) as completed_requests,
-            COALESCE(SUM(CASE WHEN fr.status = 'approved' THEN 1 ELSE 0 END), 0) as pending_requests,
+            COALESCE(SUM(CASE WHEN fr.workflow_state = 'completed' THEN 1 ELSE 0 END), 0) as completed_requests,
+            COALESCE(SUM(CASE WHEN fr.approval_status = 'approved' THEN 1 ELSE 0 END), 0) as pending_requests,
             COALESCE(SUM(CASE WHEN fr.approval_status = 'pending' THEN 1 ELSE 0 END), 0) as awaiting_approval
         FROM feedback_requests fr
-        WHERE fr.requester_id = ? AND fr.status != 'rejected'
+        WHERE fr.requester_id = ? AND fr.approval_status != 'rejected'
     """
     try:
         result = conn.execute(query, (user_id,))
@@ -998,7 +1031,7 @@ def get_hr_dashboard_metrics():
             
             # Pending feedback requests (only for active cycle)
             pending_requests = conn.execute(
-                "SELECT COUNT(*) FROM feedback_requests WHERE status = 'approved' AND cycle_id = ?"
+                "SELECT COUNT(*) FROM feedback_requests WHERE approval_status = 'approved' AND cycle_id = ?"
                 , (cycle_id,)).fetchone()[0]
             
             # Completed feedback this month (only for active cycle)
@@ -1010,7 +1043,7 @@ def get_hr_dashboard_metrics():
             # Users with incomplete reviews (only for active cycle)
             incomplete_reviews = conn.execute("""
                 SELECT COUNT(DISTINCT reviewer_id) FROM feedback_requests 
-                WHERE status = 'approved' AND cycle_id = ?
+                WHERE approval_status = 'approved' AND cycle_id = ?
             """, (cycle_id,)).fetchone()[0]
         else:
             # No active cycle - all metrics should be 0
@@ -1047,7 +1080,7 @@ def get_users_with_pending_reviews():
                COUNT(fr.request_id) as pending_count
         FROM users u
         JOIN feedback_requests fr ON u.user_type_id = fr.reviewer_id
-        WHERE fr.status = 'approved' AND u.is_active = 1 AND fr.cycle_id = ?
+        WHERE fr.approval_status = 'approved' AND u.is_active = 1 AND fr.cycle_id = ?
         GROUP BY u.user_type_id, u.first_name, u.last_name, u.vertical, u.email
         ORDER BY pending_count DESC, u.first_name
     """
@@ -1304,13 +1337,13 @@ def get_feedback_by_cycle(user_id, cycle_id=None):
         params = [user_id]
     
     query = f"""
-        SELECT fr.request_id, fr.reviewer_id, fr.relationship_type, fr.status,
+        SELECT fr.request_id, fr.reviewer_id, fr.relationship_type, fr.workflow_state,
                fr.submitted_at, fr.cycle_id, rc.cycle_display_name,
                u.first_name, u.last_name
         FROM feedback_requests fr
         JOIN users u ON fr.reviewer_id = u.user_type_id
         LEFT JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
-        WHERE fr.requester_id = ? AND fr.status = 'completed' {cycle_filter}
+        WHERE fr.requester_id = ? AND fr.workflow_state = 'completed' {cycle_filter}
         ORDER BY fr.submitted_at DESC
     """
     
@@ -1654,6 +1687,37 @@ def approve_reject_feedback_request(request_id, manager_id, action, rejection_re
                 process_external_stakeholder_invitations(request_id)
             except Exception:
                 pass
+            
+            # Send invitation email to the nominee (internal reviewer)
+            try:
+                # Get request details for the invitation email
+                request_details = conn.execute(
+                    """
+                    SELECT fr.request_id, fr.requester_id, fr.reviewer_id, fr.relationship_type,
+                           req_user.first_name || ' ' || req_user.last_name as requester_name,
+                           rev_user.first_name || ' ' || rev_user.last_name as reviewer_name,
+                           rev_user.email as reviewer_email,
+                           cycle.cycle_name, cycle.feedback_deadline
+                    FROM feedback_requests fr
+                    JOIN users req_user ON fr.requester_id = req_user.user_type_id
+                    LEFT JOIN users rev_user ON fr.reviewer_id = rev_user.user_type_id
+                    LEFT JOIN review_cycles cycle ON fr.cycle_id = cycle.cycle_id
+                    WHERE fr.request_id = ? AND rev_user.email IS NOT NULL
+                    """,
+                    (request_id,)
+                ).fetchone()
+                
+                if request_details:
+                    send_nominee_invite(
+                        reviewer_email=request_details[6],
+                        reviewer_name=request_details[5],
+                        requester_name=request_details[4],
+                        cycle_name=request_details[7],
+                        feedback_deadline=str(request_details[8]),
+                        relationship_type=request_details[3]
+                    )
+            except Exception as e:
+                print(f"Error sending nominee invitation: {e}")
         elif action == "reject":
             conn.execute(
                 """
@@ -1946,7 +2010,7 @@ def auto_accept_expired_nominations():
         manager_approval_query = """
             UPDATE feedback_requests 
             SET approval_status = 'approved', 
-                status = 'approved',
+                workflow_state = 'pending_reviewer_acceptance',
                 approval_date = CURRENT_TIMESTAMP,
                 approved_by = -1
             WHERE cycle_id = ? AND approval_status = 'pending'
@@ -2219,7 +2283,7 @@ def get_pending_reviewer_requests(user_id):
             FROM feedback_requests fr
             JOIN users req ON fr.requester_id = req.user_type_id
             JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
-            WHERE fr.reviewer_id = ? AND fr.approval_status = 'approved' AND fr.reviewer_status IS NULL
+            WHERE fr.reviewer_id = ? AND fr.approval_status = 'approved' AND fr.reviewer_status = 'pending_acceptance'
             ORDER BY fr.created_at ASC
         """
         result = conn.execute(query, (user_id,))
@@ -2538,47 +2602,49 @@ def complete_external_stakeholder_feedback(request_id, responses):
     try:
         # Insert final responses
         for question_id, response_data in responses.items():
-            response_query = """
+            response_value = response_data.get('response_value')
+            rating_value = response_data.get('rating_value')
+            
+            # Handle NULL values properly for LibSQL
+            response_value_sql = f"'{response_value}'" if response_value else "NULL"
+            rating_value_sql = str(rating_value) if rating_value else "NULL"
+            
+            response_query = f"""
                 INSERT INTO feedback_responses (request_id, question_id, response_value, rating_value)
-                VALUES (?, ?, ?, ?)
+                VALUES ({request_id}, {question_id}, {response_value_sql}, {rating_value_sql})
             """
-            conn.execute(response_query, (
-                request_id, 
-                question_id, 
-                response_data.get('response_value'), 
-                response_data.get('rating_value')
-            ))
+            conn.execute(response_query)
         
         # Update request status
-        update_query = """
+        update_query = f"""
             UPDATE feedback_requests 
-            SET status = 'completed', completed_at = CURRENT_TIMESTAMP
-            WHERE request_id = ?
+            SET reviewer_status = 'completed', completed_at = CURRENT_TIMESTAMP
+            WHERE request_id = {request_id}
         """
-        conn.execute(update_query, (request_id,))
+        conn.execute(update_query)
         
         # Update token status
-        conn.execute("""
+        conn.execute(f"""
             UPDATE external_stakeholder_tokens 
             SET status = 'completed'
-            WHERE request_id = ?
-        """, (request_id,))
+            WHERE request_id = {request_id}
+        """)
         
         conn.commit()
         
         # Send feedback completion notification
         try:
             # Get request details for notification
-            notification_query = """
+            notification_query = f"""
                 SELECT fr.external_reviewer_email, u.email as requester_email,
                        u.first_name || ' ' || u.last_name as requester_name,
                        c.cycle_name
                 FROM feedback_requests fr
                 JOIN users u ON fr.requester_id = u.user_type_id
                 LEFT JOIN review_cycles c ON fr.cycle_id = c.cycle_id
-                WHERE fr.request_id = ?
+                WHERE fr.request_id = {request_id}
             """
-            result = conn.execute(notification_query, (request_id,))
+            result = conn.execute(notification_query)
             details = result.fetchone()
             
             if details:

@@ -159,7 +159,7 @@ with tab2:
                         deadline_type,
                         new_deadline.strftime('%Y-%m-%d'),
                         reason.strip(),
-                        st.session_state.user_id
+                        st.session_state["user_data"]["user_type_id"]
                     )
                     
                     if success:

@@ -1,7 +1,7 @@
 import streamlit as st
 from services.db_helper import get_pending_reviews_for_user, get_active_review_cycle, get_all_cycles
 
-st.title("Complete Reviews")
+st.title("Reviews")
 
 # Check if there's an active review cycle
 active_cycle = get_active_review_cycle()
@@ -55,7 +55,7 @@ else:
                         st.write("*Not started*")
                 
                 with col3:
-                    if st.button(f"Complete Review", key=f"complete_{request_id}", type="primary"):
+                    if st.button(f"Start Review", key=f"complete_{request_id}", type="primary"):
                         # Set the selected review in session state and switch to provide feedback page
                         st.session_state['selected_review_id'] = request_id
                         st.switch_page("app_pages/provide_feedback.py")
