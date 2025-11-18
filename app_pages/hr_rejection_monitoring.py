@@ -5,7 +5,7 @@ from datetime import datetime
 st.title("Rejection Monitoring")
 
 st.info(
-    "[Info] Monitor all nomination rejections across both manager approvals and reviewer acceptances. "
+    "Monitor all nomination rejections across both manager approvals and reviewer acceptances. "
     "This helps identify patterns and ensure the feedback process runs smoothly."
 )
 
@@ -40,7 +40,7 @@ else:
         st.subheader("Manager Approval Rejections")
         if manager_rejections:
             st.info(
-                "[Info] These nominations were rejected by managers during the approval process. "
+                "These nominations were rejected by managers during the approval process. "
                 "Employees can nominate different reviewers for these slots."
             )
 
@@ -84,7 +84,7 @@ else:
         st.subheader("Reviewer Acceptance Rejections")
         if reviewer_rejections:
             st.info(
-                "[Info] These feedback requests were declined by the nominated reviewers. "
+                "These feedback requests were declined by the nominated reviewers. "
                 "Employees can nominate different reviewers for these slots."
             )
 

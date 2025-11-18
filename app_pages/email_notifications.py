@@ -18,8 +18,7 @@ from utils.cache_helper import (
     SafeCache,
     invalidate_on_user_action
 )
-# Import centralized email logging for future use
-from services.email_logging import log_email_basic, log_email_enhanced
+from services.email_service import send_email
 
 # Helper functions for calculating specific user groups
 def get_users_with_pending_nominations():
@@ -140,35 +139,39 @@ def get_users_with_pending_reviews():
     # Single optimized query using JOINs to find users with pending reviews to complete
     # This replaces the N+1 query pattern with a single database call
     query = """
-        SELECT DISTINCT 
+        SELECT 
             u.user_type_id,
-            u.first_name || ' ' || u.last_name as name,
+            u.first_name,
+            u.last_name,
             u.email,
             u.vertical,
-            u.designation
+            u.designation,
+            COUNT(fr.request_id) as pending_count
         FROM users u
         INNER JOIN feedback_requests fr ON fr.reviewer_id = u.user_type_id
         WHERE u.is_active = 1
         AND fr.cycle_id = ?
         AND fr.status = 'approved'
         AND NOT EXISTS (
-            -- Check if review is not completed (no final response)
             SELECT 1 FROM final_responses fres
             WHERE fres.request_id = fr.request_id
         )
+        GROUP BY u.user_type_id, u.first_name, u.last_name, u.email, u.vertical, u.designation
         ORDER BY u.first_name, u.last_name
     """
     
     result = conn.execute(query, (cycle_id,))
     users = result.fetchall()
     
-    # Convert to expected format
     return [{
         'user_type_id': user[0],
-        'name': user[1],
-        'email': user[2],
-        'vertical': user[3],
-        'designation': user[4]
+        'first_name': user[1],
+        'last_name': user[2],
+        'name': f"{(user[1] or '').strip()} {(user[2] or '').strip()}".strip() or user[3],
+        'email': user[3],
+        'vertical': user[4],
+        'designation': user[5],
+        'pending_count': user[6],
     } for user in users]
 
 def get_actual_managers():
@@ -193,6 +196,76 @@ def get_actual_managers():
         'name': f"{m[2]} {m[3]}",
         'vertical': m[4]
     } for m in managers]
+
+
+def normalize_recipient_record(record):
+    """Convert mixed recipient formats into a standard dict."""
+    if isinstance(record, dict):
+        email = record.get("email")
+        if not email:
+            return None
+        first_name = record.get("first_name")
+        last_name = record.get("last_name")
+        name = record.get("name")
+        if not name:
+            name_parts = [first_name or "", last_name or ""]
+            name = " ".join(part.strip() for part in name_parts if part).strip() or email
+        return {
+            "user_type_id": record.get("user_type_id"),
+            "email": email,
+            "name": name,
+            "pending_count": record.get("pending_count"),
+        }
+
+    if isinstance(record, (list, tuple)) and record:
+        user_id = record[0]
+        first_name = record[1] if len(record) > 1 else ""
+        last_name = record[2] if len(record) > 2 else ""
+        email = record[3] if len(record) > 3 else ""
+        name = " ".join(part.strip() for part in [first_name, last_name] if part).strip() or email
+        return {
+            "user_type_id": user_id,
+            "email": email,
+            "name": name,
+            "pending_count": record[6] if len(record) > 6 else None,
+        }
+    return None
+
+
+def build_template_context(recipient, notification_type, cycle_data):
+    """Build the context dict for template rendering."""
+    default_deadline = cycle_data.get("feedback_deadline") or cycle_data.get("nomination_deadline") or "TBD"
+    deadline_map = {
+        "nomination_reminder": ("nomination completion", cycle_data.get("nomination_deadline", default_deadline)),
+        "approval_reminder": ("nomination approval", cycle_data.get("nomination_deadline", default_deadline)),
+        "feedback_reminder": ("feedback completion", cycle_data.get("feedback_deadline", default_deadline)),
+        "deadline_warning": ("cycle deadline", default_deadline),
+    }
+    deadline_type, deadline_date = deadline_map.get(notification_type, ("cycle milestone", default_deadline))
+
+    return {
+        "name": recipient.get("name") or "there",
+        "email": recipient.get("email"),
+        "cycle_name": cycle_data.get("cycle_display_name", "current cycle"),
+        "nomination_deadline": cycle_data.get("nomination_deadline", "TBD"),
+        "feedback_deadline": cycle_data.get("feedback_deadline", "TBD"),
+        "pending_count": recipient.get("pending_count") or "1",
+        "deadline_type": deadline_type,
+        "deadline_date": deadline_date or "TBD",
+    }
+
+
+def text_to_html(body_text: str) -> str:
+    """Convert plain text body to simple HTML paragraphs."""
+    if not body_text:
+        return "<p></p>"
+    paragraphs = [para.strip() for para in body_text.split("\n\n")]
+    html_parts = []
+    for para in paragraphs:
+        if not para:
+            continue
+        html_parts.append(f"<p>{para.replace(chr(10), '<br>')}</p>")
+    return "".join(html_parts) or "<p></p>"
 
 st.title("Email Notifications Center")
 st.markdown("Configure and send email notifications for feedback deadlines and reminders")
@@ -472,141 +545,96 @@ col1, col2 = st.columns(2)
 with col1:
     st.write("**Delivery:** Send Immediately")
 
-with col2:
-    # Calculate recipient count - cache user data to avoid duplicate queries
-    recipient_count = 0
-    cached_users = None
-    
-    if audience_type == "all_users":
-        # Use page-level cache to avoid querying twice in same page load
-        cached_users = get_page_cached_user_data(
-            "all_active_users",
-            "SELECT user_type_id, first_name, last_name, email FROM users WHERE is_active = 1"
-        )
-        recipient_count = len(cached_users)
-    elif audience_type == "specific_users":
-        recipient_count = len(selected_users)
-        cached_users = selected_users
-    elif audience_type == "by_vertical" and selected_vertical:
-        # Use page-level cache for vertical users
-        cached_users = get_page_cached_user_data(
-            f"vertical_users_{selected_vertical}",
-            "SELECT user_type_id, first_name, last_name, email FROM users WHERE is_active = 1 AND vertical = ?",
-            (selected_vertical,)
-        )
-        recipient_count = len(cached_users)
-    elif audience_type == "pending_nominations":
-        cached_users = get_users_with_pending_nominations()
-        recipient_count = len(cached_users)
-    elif audience_type == "pending_approvals":
-        cached_users = get_managers_with_pending_approvals()
-        recipient_count = len(cached_users)
-    elif audience_type == "pending_reviews":
-        cached_users = get_users_with_pending_reviews()
-        recipient_count = len(cached_users)
+# Resolve recipients for the selected audience
+audience_recipients = []
+if audience_type == "all_users":
+    audience_recipients = get_page_cached_user_data(
+        "all_active_users",
+        "SELECT user_type_id, first_name, last_name, email FROM users WHERE is_active = 1",
+    )
+elif audience_type == "by_vertical" and selected_vertical:
+    audience_recipients = get_page_cached_user_data(
+        f"vertical_users_{selected_vertical}",
+        "SELECT user_type_id, first_name, last_name, email FROM users WHERE is_active = 1 AND vertical = ?",
+        (selected_vertical,),
+    )
+elif audience_type == "specific_users":
+    audience_recipients = selected_users
+else:
+    audience_recipients = selected_users
 
+# Normalize and deduplicate recipients by email
+normalized_recipients = []
+seen_emails = set()
+for record in audience_recipients:
+    normalized = normalize_recipient_record(record)
+    if not normalized or not normalized.get("email"):
+        continue
+    email_key = normalized["email"].strip().lower()
+    if email_key in seen_emails:
+        continue
+    seen_emails.add(email_key)
+    normalized_recipients.append(normalized)
+
+recipient_count = len(normalized_recipients)
+
+with col2:
     st.write(f"**Recipients:** {recipient_count} users")
 
 # Send button
 if st.button("Send Notification", type="primary", disabled=recipient_count == 0):
-    # Use cached users to avoid duplicate queries
-    success_count = 0
-    users_to_send = cached_users or []
-
-    # Count successful sends (simulation)
-    success_count = len(users_to_send)
-
-    if success_count > 0:
-        # Enhanced email logging with new structure
-        conn = get_connection()
-        try:
-            # Get current cycle
-            active_cycle = get_active_review_cycle()
-            cycle_id = active_cycle.get('cycle_id') if active_cycle else None
-            
-            # Create a master log entry
-            cursor = conn.execute(
-                """
-                INSERT INTO email_logs (
-                    email_type, subject, status, email_category, 
-                    initiated_by, cycle_id, sent_at
-                ) VALUES (?, ?, 'sent', 'targeted', ?, ?, datetime('now'))
-                """,
-                (
-                    notification_type,
-                    custom_subject,
-                    st.session_state["user_data"]["user_type_id"],
-                    cycle_id
-                ),
-            )
-            log_id = cursor.lastrowid
-            
-            # Use cached recipients to avoid duplicate queries
-            all_recipients = []
-            
-            if audience_type in ["all_users", "by_vertical"]:
-                # Use cached database results (tuples: user_type_id, first_name, last_name, email)
-                all_recipients = users_to_send
-            elif audience_type == "specific_users":
-                # Convert user dict format to tuple format
-                all_recipients = [(u['user_type_id'], u['name'].split()[0], u['name'].split()[-1], u['email']) for u in users_to_send]
-            elif audience_type in ["pending_nominations", "pending_approvals", "pending_reviews"]:
-                # Convert user dict format to tuple format
-                all_recipients = [(u['user_type_id'], u['name'].split()[0], u['name'].split()[-1], u['email']) for u in users_to_send]
-            
-            # Insert individual recipient records
-            for recipient in all_recipients:
-                user_id, first_name, last_name, email = recipient
-                recipient_name = f"{first_name} {last_name}"
-                
-                # Create individual email log entry
-                conn.execute(
-                    """
-                    INSERT INTO email_logs (
-                        email_type, subject, status, email_category,
-                        recipient_email, recipient_name, initiated_by, cycle_id, sent_at
-                    ) VALUES (?, ?, 'sent', 'targeted', ?, ?, ?, ?, datetime('now'))
-                    """,
-                    (
-                        notification_type,
-                        custom_subject,
-                        email,
-                        recipient_name,
-                        st.session_state["user_data"]["user_type_id"],
-                        cycle_id
-                    ),
-                )
-                
-                # Also create entry in email_recipients table for detailed tracking
-                conn.execute(
-                    """
-                    INSERT INTO email_recipients (
-                        log_id, recipient_email, recipient_name, delivery_status, delivered_at
-                    ) VALUES (?, ?, ?, 'delivered', datetime('now'))
-                    """,
-                    (log_id, email, recipient_name),
-                )
-            
-            conn.commit()
-            
-        except Exception as e:
-            print(f"Error logging email: {e}")
-            # Fallback to basic logging if new schema fails
-            try:
-                conn.execute(
-                    "INSERT INTO email_logs (email_type, subject, status) VALUES (?, ?, 'sent')",
-                    (notification_type, custom_subject)
-                )
-                conn.commit()
-            except:
-                pass
-
-        st.success(f"Notification sent to {success_count} recipients!")
-        
-        # Email sending doesn't change user data, so no cache invalidation needed
-        # (We follow the principle: only invalidate when data actually changes)
+    if recipient_count == 0:
+        st.error("No recipients selected.")
     else:
-        st.error("Failed to send notifications")
+        formatted_messages = []
+        template_error = None
+        for recipient in normalized_recipients:
+            context = build_template_context(recipient, notification_type, active_cycle)
+            try:
+                subject = custom_subject.format(**context)
+                body_text = custom_body.format(**context)
+            except KeyError as exc:
+                template_error = exc
+                break
+            html_body = text_to_html(body_text)
+            formatted_messages.append((recipient, subject, body_text, html_body))
+
+        if template_error:
+            st.error(
+                f"Template variable {{{template_error}}} is not available. "
+                "Please update the subject/body placeholders and try again."
+            )
+        else:
+            successes = 0
+            failures = []
+            initiator_id = st.session_state["user_data"]["user_type_id"]
+
+            for recipient, subject, body_text, html_body in formatted_messages:
+                queued = send_email(
+                    to_email=recipient["email"],
+                    subject=subject,
+                    html_body=html_body,
+                    text_body=body_text,
+                    email_type=notification_type,
+                    recipient_name=recipient["name"],
+                    cycle_id=active_cycle["cycle_id"],
+                    initiated_by=initiator_id,
+                )
+                if queued:
+                    successes += 1
+                else:
+                    failures.append(recipient["email"])
+
+            if successes:
+                st.success(
+                    f"Queued {successes} email"
+                    f"{'s' if successes != 1 else ''} for delivery via the email worker."
+                )
+            if failures:
+                st.error(
+                    "Failed to queue the following addresses: "
+                    + ", ".join(sorted(failures))
+                )
 
 # Notification history moved to separate page
 st.markdown("---")

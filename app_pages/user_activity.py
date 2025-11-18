@@ -43,50 +43,52 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
 with tab1:
     st.subheader("User Engagement Overview")
 
-    conn = get_connection()
-
     # Get summary statistics
     try:
-        # Total active users
-        total_users = conn.execute(
-            "SELECT COUNT(*) FROM users WHERE is_active = 1"
-        ).fetchone()[0]
+        with get_connection() as conn:
+            # Total active users
+            result = conn.execute("SELECT COUNT(*) FROM users WHERE is_active = 1")
+            row = result.fetchone()
+            total_users = row[0] if row else 0
 
-        # Users who have participated (made nominations)
-        participating_users = (
-            conn.execute(
+            # Users who have participated (made nominations)
+            if active_cycle:
+                result = conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT requester_id) FROM feedback_requests 
+                    WHERE cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
                 """
-            SELECT COUNT(DISTINCT requester_id) FROM feedback_requests 
-            WHERE cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
-        """
-            ).fetchone()[0]
-            if active_cycle
-            else 0
-        )
+                )
+                row = result.fetchone()
+                participating_users = row[0] if row else 0
+            else:
+                participating_users = 0
 
-        # Users with completed reviews
-        completed_users = (
-            conn.execute(
+            # Users with completed reviews
+            if active_cycle:
+                result = conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT requester_id) FROM feedback_requests 
+                    WHERE status = 'completed' AND cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
                 """
-            SELECT COUNT(DISTINCT requester_id) FROM feedback_requests 
-            WHERE status = 'completed' AND cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
-        """
-            ).fetchone()[0]
-            if active_cycle
-            else 0
-        )
+                )
+                row = result.fetchone()
+                completed_users = row[0] if row else 0
+            else:
+                completed_users = 0
 
-        # Users who have reviewed others
-        reviewers_active = (
-            conn.execute(
+            # Users who have reviewed others
+            if active_cycle:
+                result = conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT reviewer_id) FROM feedback_requests 
+                    WHERE status = 'completed' AND cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
                 """
-            SELECT COUNT(DISTINCT reviewer_id) FROM feedback_requests 
-            WHERE status = 'completed' AND cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
-        """
-            ).fetchone()[0]
-            if active_cycle
-            else 0
-        )
+                )
+                row = result.fetchone()
+                reviewers_active = row[0] if row else 0
+            else:
+                reviewers_active = 0
 
         # Display metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -410,60 +412,65 @@ with tab4:
     st.subheader("Feedback Completion Activity")
 
     try:
-        # Feedback completion stats
-        if active_cycle:
-            feedback_stats = conn.execute(
+        with get_connection() as conn:
+            # Feedback completion stats
+            feedback_stats = None
+            if active_cycle:
+                feedback_stats = conn.execute(
+                    """
+                    SELECT 
+                        COUNT(*) as total_requests,
+                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                        SUM(CASE WHEN status = 'approved' AND reviewer_status = 'accepted' THEN 1 ELSE 0 END) as in_progress,
+                        COUNT(DISTINCT reviewer_id) as total_reviewers,
+                        COUNT(DISTINCT CASE WHEN status = 'completed' THEN reviewer_id END) as active_reviewers
+                    FROM feedback_requests
+                    WHERE cycle_id = ? AND approval_status = 'approved'
+                """,
+                    (active_cycle["cycle_id"],),
+                ).fetchone()
+
+            if feedback_stats:
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.metric("Total Requests", feedback_stats[0] or 0)
+                with col2:
+                    st.metric("Completed", feedback_stats[1] or 0)
+                with col3:
+                    completion_rate = (
+                        (feedback_stats[1] / feedback_stats[0] * 100)
+                        if (feedback_stats[0] or 0) > 0
+                        else 0
+                    )
+                    st.metric("Completion Rate", f"{completion_rate:.1f}%")
+                with col4:
+                    st.metric("In Progress", feedback_stats[2] or 0)
+                with col5:
+                    st.metric("Active Reviewers", feedback_stats[4] or 0)
+            else:
+                st.info("No feedback statistics available for the selected cycle.")
+
+            # Top feedback contributors
+            st.subheader("Top Feedback Contributors")
+
+            top_reviewers = conn.execute(
                 """
                 SELECT 
-                    COUNT(*) as total_requests,
-                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-                    SUM(CASE WHEN status = 'approved' AND reviewer_status = 'accepted' THEN 1 ELSE 0 END) as in_progress,
-                    COUNT(DISTINCT reviewer_id) as total_reviewers,
-                    COUNT(DISTINCT CASE WHEN status = 'completed' THEN reviewer_id END) as active_reviewers
-                FROM feedback_requests
-                WHERE cycle_id = ? AND approval_status = 'approved'
-            """,
-                (active_cycle["cycle_id"],),
-            ).fetchone()
-
-            col1, col2, col3, col4, col5 = st.columns(5)
-            with col1:
-                st.metric("Total Requests", feedback_stats[0] or 0)
-            with col2:
-                st.metric("Completed", feedback_stats[1] or 0)
-            with col3:
-                completion_rate = (
-                    (feedback_stats[1] / feedback_stats[0] * 100)
-                    if feedback_stats[0] > 0
-                    else 0
-                )
-                st.metric("Completion Rate", f"{completion_rate:.1f}%")
-            with col4:
-                st.metric("In Progress", feedback_stats[2] or 0)
-            with col5:
-                st.metric("Active Reviewers", feedback_stats[4] or 0)
-
-        # Top feedback contributors
-        st.subheader("Top Feedback Contributors")
-
-        top_reviewers = conn.execute(
+                    u.first_name || ' ' || u.last_name as reviewer_name,
+                    u.vertical,
+                    COUNT(fr.request_id) as completed_reviews,
+                    AVG(LENGTH(resp.response_value)) as avg_response_length,
+                    MAX(fr.completed_at) as last_completion
+                FROM feedback_requests fr
+                JOIN users u ON fr.reviewer_id = u.user_type_id
+                LEFT JOIN feedback_responses resp ON fr.request_id = resp.request_id
+                WHERE fr.workflow_state = 'completed' 
+                    AND fr.cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
+                GROUP BY fr.reviewer_id, u.first_name, u.last_name, u.vertical
+                ORDER BY completed_reviews DESC
+                LIMIT 10
             """
-            SELECT 
-                u.first_name || ' ' || u.last_name as reviewer_name,
-                u.vertical,
-                COUNT(fr.request_id) as completed_reviews,
-                AVG(LENGTH(resp.response_value)) as avg_response_length,
-                MAX(fr.completed_at) as last_completion
-            FROM feedback_requests fr
-            JOIN users u ON fr.reviewer_id = u.user_type_id
-            LEFT JOIN feedback_responses resp ON fr.request_id = resp.request_id
-            WHERE fr.workflow_state = 'completed' 
-                AND fr.cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
-            GROUP BY fr.reviewer_id, u.first_name, u.last_name, u.vertical
-            ORDER BY completed_reviews DESC
-            LIMIT 10
-        """
-        ).fetchall()
+            ).fetchall()
 
         if top_reviewers:
             for i, reviewer in enumerate(top_reviewers, 1):

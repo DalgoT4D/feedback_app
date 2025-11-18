@@ -6,6 +6,7 @@ Clean implementation using turso-python for ARM compatibility
 import streamlit as st
 from turso_python import TursoClient
 from typing import Optional, List, Dict, Any, Union
+from datetime import datetime, date
 import logging
 
 # Configure logging
@@ -45,19 +46,7 @@ class TursoResult:
                             for row in result_data['rows']:
                                 processed_row = []
                                 for cell in row:
-                                    if isinstance(cell, dict) and 'value' in cell:
-                                        # Convert string values back to appropriate types
-                                        value = cell['value']
-                                        if cell.get('type') == 'integer':
-                                            value = int(value) if value is not None else None
-                                        elif cell.get('type') == 'real':
-                                            value = float(value) if value is not None else None
-                                        elif cell.get('type') == 'null':
-                                            value = None
-                                        # 'text' and other types remain as strings
-                                        processed_row.append(value)
-                                    else:
-                                        processed_row.append(cell)
+                                    processed_row.append(self._normalize_cell_value(cell))
                                 self._rows.append(tuple(processed_row))
                         
                         # Set affected row count
@@ -67,6 +56,31 @@ class TursoResult:
             logger.error(f"Error processing Turso response: {e}")
             self._rows = []
             self._columns = []
+    
+    def _normalize_cell_value(self, cell):
+        """Convert Turso cell payloads into native Python values"""
+        if not isinstance(cell, dict):
+            return cell
+        
+        cell_type = cell.get('type')
+        value = cell.get('value')
+        
+        if value is None:
+            if cell_type == 'null':
+                return None
+            return None
+        
+        try:
+            if cell_type == 'integer':
+                return int(value)
+            if cell_type == 'real':
+                return float(value)
+            if cell_type == 'boolean':
+                return str(value).lower() in ('1', 'true', 't', 'yes')
+        except Exception:
+            pass
+        
+        return value
     
     def fetchone(self) -> Optional[tuple]:
         """Fetch next row as tuple (compatible with libsql_experimental)"""
@@ -131,19 +145,15 @@ class TursoConnection:
             TursoResult: Compatible result object
         """
         try:
+            if self._client is None:
+                self._connect()
             if parameters:
                 # Handle parameterized queries
                 # Convert tuple/list parameters to the format expected by turso-python
                 if isinstance(parameters, (tuple, list)):
-                    # For positional parameters, we need to replace ? with actual values
-                    # This is a simplified approach - in production, you might want more sophisticated parameter handling
                     formatted_query = query
                     for param in parameters:
-                        if isinstance(param, str):
-                            formatted_query = formatted_query.replace('?', f"'{param}'", 1)
-                        else:
-                            formatted_query = formatted_query.replace('?', str(param), 1)
-                    
+                        formatted_query = formatted_query.replace('?', self._format_parameter(param), 1)
                     response = self._client.execute_query(formatted_query)
                 else:
                     response = self._client.execute_query(query)
@@ -177,6 +187,21 @@ class TursoConnection:
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+    def _format_parameter(self, param: Any) -> str:
+        """Convert python types into safe SQL literal strings."""
+        if param is None:
+            return "NULL"
+        if isinstance(param, bool):
+            return "1" if param else "0"
+        if isinstance(param, (int, float)):
+            return str(param)
+        if isinstance(param, (datetime, date)):
+            return f"'{param.isoformat()}'"
+        # Strings (and everything else cast to string) need escaping
+        text = str(param)
+        text = text.replace("'", "''")
+        return f"'{text}'"
 
 
 def get_connection() -> TursoConnection:

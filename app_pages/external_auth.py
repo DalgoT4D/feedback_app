@@ -9,6 +9,7 @@ from services.db_helper import (
     accept_external_stakeholder_request,
     get_active_review_cycle,
 )
+from utils.external_session import reset_external_session
 
 st.set_page_config(
     page_title="External Stakeholder Login", page_icon="🤝", layout="centered"
@@ -51,8 +52,8 @@ if (
     if active_cycle and active_cycle.get("feedback_deadline"):
         st.info(f"Feedback Deadline: {active_cycle['feedback_deadline']}")
 
-    # Minimal "Complete Reviews" style summary with a single action
-    st.subheader("Complete Reviews")
+    # Minimal "Provide Feedback" style summary with a single action
+    st.subheader("Provide Feedback")
     st.write(
         f"1 pending review for {token_data['requester_name']} "
         f"({token_data['relationship_type'].replace('_', ' ').title()})"
@@ -61,62 +62,48 @@ if (
     if st.button("Provide Feedback", type="primary", use_container_width=True):
         st.switch_page("app_pages/external_feedback.py")
 
-    st.markdown("---")
+    else:
+        # Authentication form
+        st.subheader("Enter Your Credentials")
+        st.info("Please enter the email address and token from your invitation email.")
 
-    # Back to main login option
-    if st.button("← Return to Main Login", key="back_to_main"):
-        # Clear external session data
-        st.session_state["external_authenticated"] = False
-        st.session_state["external_token_data"] = None
-        st.session_state["login_type"] = None
-        if "show_rejection_form" in st.session_state:
-            del st.session_state["show_rejection_form"]
-        st.switch_page("main.py")
+        if st.button("← Back to Login Options"):
+            reset_external_session()
+            st.switch_page("main.py")
 
-else:
-    # Authentication form
-    st.subheader("Enter Your Credentials")
-    st.info("Please enter the email address and token from your invitation email.")
+        with st.form("external_auth_form"):
+            email = st.text_input(
+                "Email Address",
+                placeholder="Enter the email where you received the invitation",
+                help="This should match the email address where you received the feedback request",
+            )
 
-    # Back button
-    if st.button("← Back to Login Options"):
-        st.session_state["login_type"] = None
-        st.switch_page("main.py")
+            token = st.text_input(
+                "Access Token",
+                placeholder="Enter the token from your invitation email",
+                help="Copy and paste the token exactly as it appears in your email",
+            )
 
-    with st.form("external_auth_form"):
-        email = st.text_input(
-            "Email Address",
-            placeholder="Enter the email where you received the invitation",
-            help="This should match the email address where you received the feedback request",
-        )
+            submit_auth = st.form_submit_button("Authenticate", type="primary")
 
-        token = st.text_input(
-            "Access Token",
-            placeholder="Enter the token from your invitation email",
-            help="Copy and paste the token exactly as it appears in your email",
-        )
-
-        submit_auth = st.form_submit_button("Authenticate", type="primary")
-
-        if submit_auth:
-            if not email or not token:
-                st.error("Please enter both email address and token.")
-            else:
-                # Validate the token
-                token_data = validate_external_token(email.strip(), token.strip())
-
-                if token_data:
-                    st.session_state["external_authenticated"] = True
-                    st.session_state["external_token_data"] = token_data
-                    st.success("Authentication successful! Redirecting...")
-                    st.rerun()
+            if submit_auth:
+                if not email or not token:
+                    st.error("Please enter both email address and token.")
                 else:
-                    st.error(
-                        "Invalid email or token. Please check your credentials and try again."
-                    )
-                    st.info(
-                        "Make sure you're using the exact email and token from your invitation."
-                    )
+                    token_data = validate_external_token(email.strip(), token.strip())
+
+                    if token_data:
+                        st.session_state["external_authenticated"] = True
+                        st.session_state["external_token_data"] = token_data
+                        st.success("Authentication successful! Redirecting...")
+                        st.rerun()
+                    else:
+                        st.error(
+                            "Invalid email or token. Please check your credentials and try again."
+                        )
+                        st.info(
+                            "Make sure you're using the exact email and token from your invitation."
+                        )
 
 # Help section
 with st.expander("❓ Need Help?"):

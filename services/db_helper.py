@@ -10,7 +10,7 @@ import secrets
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any, Union, Tuple
 import logging
-from .turso_connection import get_connection
+from .turso_connection import get_connection as turso_get_connection
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 # Cache for frequently accessed data
 _cache = {}
 _cache_timestamps = {}
+
+def get_connection():
+    """Backward compatible accessor that returns a Turso-backed connection."""
+    return turso_get_connection()
 
 def get_cached_value(cache_key, cache_duration_seconds=60):
     """Get a cached value if it hasn't expired"""
@@ -36,41 +40,22 @@ def set_cached_value(cache_key, data, cache_duration_seconds=60):
 # =====================================================
 # EMAIL QUEUE FUNCTIONS
 # =====================================================
-
-def create_email_queue_table():
-    """Create the email queue table if it doesn't exist"""
-    conn = get_connection()
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS email_queue (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                to_email TEXT NOT NULL,
-                subject TEXT NOT NULL,
-                html_body TEXT NOT NULL,
-                text_body TEXT,
-                email_type TEXT DEFAULT 'general',
-                status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_attempt TIMESTAMP,
-                attempt_count INTEGER DEFAULT 0,
-                error_message TEXT
-            )
-        """)
-        conn.commit()
-    except Exception as e:
-        logger.error(f"Error creating email queue table: {e}")
-
 def queue_email(to_email: str, subject: str, html_body: str, text_body: str = None, email_type: str = "general"):
     """Add email to the queue"""
     conn = get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO email_queue (to_email, subject, html_body, text_body, email_type)
             VALUES (?, ?, ?, ?, ?)
-        """, (to_email, subject, html_body, text_body, email_type))
+            """,
+            (to_email, subject, html_body, text_body, email_type),
+        )
         conn.commit()
+        return True
     except Exception as e:
         logger.error(f"Error queuing email: {e}")
+        return False
 
 def get_pending_emails():
     """Get pending emails from the queue"""
@@ -361,6 +346,39 @@ def get_all_cycles():
         logger.error(f"Error fetching all cycles: {e}")
         return []
 
+def get_cycle_by_id(cycle_id):
+    """Get a specific cycle by ID with all metadata."""
+    conn = get_connection()
+    query = """
+        SELECT cycle_id, cycle_name, cycle_display_name, cycle_description, 
+               cycle_year, cycle_quarter, phase_status, is_active,
+               nomination_start_date, nomination_deadline, feedback_deadline, created_at
+        FROM review_cycles 
+        WHERE cycle_id = ?
+    """
+    try:
+        result = conn.execute(query, (cycle_id,))
+        row = result.fetchone()
+        if row:
+            return {
+                'cycle_id': row[0],
+                'cycle_name': row[1],
+                'cycle_display_name': row[2],
+                'cycle_description': row[3],
+                'cycle_year': row[4],
+                'cycle_quarter': row[5],
+                'phase_status': row[6],
+                'is_active': row[7],
+                'nomination_start_date': row[8],
+                'nomination_deadline': row[9],
+                'feedback_deadline': row[10],
+                'created_at': row[11]
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching cycle by ID: {e}")
+        return None
+
 def create_named_cycle(display_name, description, year, quarter, cycle_name, nomination_start, nomination_deadline, feedback_deadline, created_by):
     """Create a new named review cycle"""
     conn = get_connection()
@@ -398,6 +416,49 @@ def create_named_cycle(display_name, description, year, quarter, cycle_name, nom
         logger.error(f"Error creating named cycle: {e}")
         conn.rollback()
         return False, str(e)
+
+def get_current_cycle_context():
+    """Get detailed current cycle context for smart messaging."""
+    conn = get_connection()
+    try:
+        active_cycle = get_active_review_cycle()
+        
+        recent_cycles = conn.execute("""
+            SELECT cycle_id, cycle_display_name, cycle_year, cycle_quarter, created_at
+            FROM review_cycles 
+            ORDER BY created_at DESC LIMIT 3
+        """).fetchall()
+        
+        if active_cycle:
+            total_users = conn.execute("SELECT COUNT(*) FROM users WHERE is_active = 1").fetchone()[0]
+            participating_users = conn.execute("""
+                SELECT COUNT(DISTINCT requester_id) FROM feedback_requests 
+                WHERE cycle_id = (SELECT cycle_id FROM review_cycles WHERE is_active = 1)
+            """).fetchone()[0]
+        else:
+            total_users = 0
+            participating_users = 0
+        
+        return {
+            'active_cycle': active_cycle,
+            'recent_cycles': [
+                {
+                    'cycle_id': r[0],
+                    'display_name': r[1],
+                    'year': r[2],
+                    'quarter': r[3],
+                    'created_at': r[4]
+                } for r in recent_cycles
+            ],
+            'participation_stats': {
+                'total_users': total_users,
+                'participating_users': participating_users,
+                'participation_rate': (participating_users / total_users * 100) if total_users > 0 else 0
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting cycle context: {e}")
+        return {'active_cycle': None, 'recent_cycles': [], 'participation_stats': {}}
 
 def mark_cycle_complete(cycle_id, completion_notes=""):
     """Mark a cycle as complete and deactivate it"""
@@ -477,6 +538,29 @@ def update_cycle_status(cycle_id, new_status):
         return True
     except Exception as e:
         logger.error(f"Error updating cycle phase_status: {e}")
+        conn.rollback()
+        return False
+
+def archive_cycle(cycle_id):
+    """Archive a completed cycle."""
+    conn = get_connection()
+    try:
+        conn.execute("""
+            UPDATE review_cycles 
+            SET is_active = 0, phase_status = 'completed'
+            WHERE cycle_id = ?
+        """, (cycle_id,))
+        
+        conn.execute("""
+            UPDATE cycle_phases 
+            SET is_current_phase = 0
+            WHERE cycle_id = ?
+        """, (cycle_id,))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error archiving cycle {cycle_id}: {e}")
         conn.rollback()
         return False
 
@@ -631,6 +715,57 @@ def create_feedback_requests_with_approval(requester_id, reviewer_data):
         conn.rollback()
         return False, str(e)
 
+def create_feedback_requests_with_approval_OLD(requester_id, reviewer_data):
+    """Legacy helper retained for compatibility with older flows."""
+    conn = get_connection()
+    try:
+        active_cycle = get_active_review_cycle()
+        if not active_cycle:
+            return False, "No active review cycle found"
+        
+        cycle_id = active_cycle['cycle_id']
+        
+        manager_query = """
+            SELECT m.user_type_id 
+            FROM users u 
+            JOIN users m ON u.reporting_manager_email = m.email 
+            WHERE u.user_type_id = ?
+        """
+        manager_result = conn.execute(manager_query, (requester_id,))
+        manager = manager_result.fetchone()
+        
+        if not manager:
+            return False, "No reporting manager found"
+        
+        for reviewer_identifier, relationship_type in reviewer_data:
+            if isinstance(reviewer_identifier, int):
+                conn.execute("""
+                    INSERT INTO feedback_requests 
+                    (cycle_id, requester_id, reviewer_id, relationship_type, status, approval_status) 
+                    VALUES (?, ?, ?, ?, 'pending_approval', 'pending')
+                """, (cycle_id, requester_id, reviewer_identifier, relationship_type))
+                
+                conn.execute("""
+                    INSERT INTO reviewer_nominations (reviewer_id, nomination_count) 
+                    VALUES (?, 1)
+                    ON CONFLICT(reviewer_id) DO UPDATE SET
+                    nomination_count = nomination_count + 1,
+                    last_updated = CURRENT_TIMESTAMP
+                """, (reviewer_identifier,))
+            else:
+                conn.execute("""
+                    INSERT INTO feedback_requests 
+                    (cycle_id, requester_id, external_reviewer_email, relationship_type, status, approval_status) 
+                    VALUES (?, ?, ?, ?, 'pending_approval', 'pending')
+                """, (cycle_id, requester_id, reviewer_identifier, relationship_type))
+        
+        conn.commit()
+        return True, "Requests submitted for manager approval"
+    except Exception as e:
+        logger.error(f"Error creating feedback requests (legacy): {e}")
+        conn.rollback()
+        return False, str(e)
+
 def get_pending_approvals_for_manager(manager_id):
     """Get feedback requests pending approval for a manager for the current active cycle only."""
     conn = get_connection()
@@ -762,6 +897,45 @@ def approve_reject_feedback_request(request_id, manager_id, action, rejection_re
         conn.rollback()
         return False
 
+def approve_reject_feedback_request_OLD(request_id, manager_id, action, rejection_reason=None):
+    """Legacy approve/reject helper maintained for backward compatibility."""
+    conn = get_connection()
+    try:
+        if action == 'approve':
+            conn.execute("""
+                UPDATE feedback_requests 
+                SET approval_status = 'approved', workflow_state = 'pending_reviewer_acceptance', 
+                    approved_by = ?, approval_date = CURRENT_TIMESTAMP
+                WHERE request_id = ?
+            """, (manager_id, request_id))
+                
+        elif action == 'reject':
+            conn.execute("""
+                UPDATE feedback_requests 
+                SET approval_status = 'rejected', status = 'rejected',
+                    approved_by = ?, approval_date = CURRENT_TIMESTAMP,
+                    rejection_reason = ?
+                WHERE request_id = ?
+            """, (manager_id, rejection_reason, request_id))
+            
+            request_details = conn.execute(
+                "SELECT requester_id, reviewer_id FROM feedback_requests WHERE request_id = ?", 
+                (request_id,)
+            ).fetchone()
+            if request_details:
+                conn.execute("""
+                    INSERT INTO rejected_nominations 
+                    (requester_id, rejected_reviewer_id, rejected_by, rejection_reason)
+                    VALUES (?, ?, ?, ?)
+                """, (request_details[0], request_details[1], manager_id, rejection_reason))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error processing legacy approval/rejection: {e}")
+        conn.rollback()
+        return False
+
 def reviewer_accept_reject_request(request_id, reviewer_id, action, rejection_reason=None):
     """Allow reviewer to accept or reject a feedback request."""
     conn = get_connection()
@@ -834,6 +1008,7 @@ def get_user_nominations_status(user_id):
                 "can_nominate_more": True,
                 "remaining_slots": 4,
             }
+
         cycle_id = active_cycle["cycle_id"]
         query = """
             SELECT fr.request_id, fr.reviewer_id, fr.external_reviewer_email,
@@ -847,21 +1022,40 @@ def get_user_nominations_status(user_id):
             ORDER BY fr.created_at ASC
         """
         result = conn.execute(query, (user_id, cycle_id))
+
         active_nominations = []
         rejected_nominations = []
-        
+
         for row in result.fetchall():
             if row[2]:  # external
-                reviewer_name = row[2]
+                reviewer_name = (
+                    row[2].strip()
+                    if isinstance(row[2], str) and row[2].strip()
+                    else "External Stakeholder"
+                )
                 designation = "External Stakeholder"
                 vertical = "External"
                 reviewer_identifier = row[2]
             else:
-                reviewer_name = f"{row[11]} {row[12]}".strip() if row[11] else "Unknown"
-                designation = row[13] or "Unknown"
-                vertical = row[14] or "Unknown"
+                first_name = row[11].strip() if isinstance(row[11], str) else ""
+                last_name = row[12].strip() if isinstance(row[12], str) else ""
+                name_parts = [part for part in [first_name, last_name] if part]
+                reviewer_name = " ".join(name_parts) if name_parts else "Unknown"
+                
+                designation = (
+                    row[13].strip()
+                    if isinstance(row[13], str) and row[13].strip()
+                    else "Unknown"
+                )
+                vertical = (
+                    row[14].strip()
+                    if isinstance(row[14], str) and row[14].strip()
+                    else "Unknown"
+                )
                 reviewer_identifier = row[1]
-            
+
+            counts_value = int(row[10]) if row[10] is not None else 1
+
             data = {
                 "request_id": row[0],
                 "reviewer_id": row[1],
@@ -876,28 +1070,34 @@ def get_user_nominations_status(user_id):
                 "created_at": row[7],
                 "rejection_reason": row[8],
                 "reviewer_rejection_reason": row[9],
-                "counts_toward_limit": row[10] or 0,
+                "status": _wf_get_display_status(row[4]),
+                "reviewer_status_label": _wf_get_reviewer_status_label(row[4], row[5], row[6]),
                 "reviewer_identifier": reviewer_identifier,
+                "counts_toward_limit": counts_value,
             }
-            
-            if row[5] == "rejected" or row[6] == "rejected":  # approval_status or reviewer_status
+
+            if row[4] in ("manager_rejected", "reviewer_rejected"):
                 rejected_nominations.append(data)
             else:
                 active_nominations.append(data)
-        
-        total_count = len(active_nominations)
-        can_nominate_more = total_count < 4
-        remaining_slots = max(0, 4 - total_count)
-        
+
+        limit_count = sum(
+            nom["counts_toward_limit"]
+            if _wf_should_count(nom["workflow_state"])
+            else 0
+            for nom in active_nominations
+        )
+
         return {
             "existing_nominations": active_nominations,
             "rejected_nominations": rejected_nominations,
-            "total_count": total_count,
-            "can_nominate_more": can_nominate_more,
-            "remaining_slots": remaining_slots,
+            "total_count": limit_count,
+            "can_nominate_more": limit_count < 4,
+            "remaining_slots": max(0, 4 - limit_count),
         }
+
     except Exception as e:
-        logger.error(f"Error getting nomination status: {e}")
+        logger.error(f"Error getting user nominations status: {e}")
         return {
             "existing_nominations": [],
             "rejected_nominations": [],
@@ -916,7 +1116,7 @@ def get_pending_reviews_for_user(user_id):
     query = """
         SELECT fr.request_id, req.first_name, req.last_name, req.vertical, 
                fr.created_at, fr.relationship_type,
-               COUNT(dr.draft_id) as draft_count
+               COUNT(dr.question_id) as draft_count
         FROM feedback_requests fr
         JOIN users req ON fr.requester_id = req.user_type_id
         JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
@@ -1055,23 +1255,30 @@ def submit_final_feedback(request_id, responses):
         conn.rollback()
         return False, str(e)
 
-def get_anonymized_feedback_for_user(user_id):
-    """Get completed feedback received by a user (anonymized - no reviewer names) for the current active cycle only."""
+def get_anonymized_feedback_for_user(user_id, cycle_id=None):
+    """Get completed feedback received by a user (anonymized - no reviewer names).
+    Defaults to the active cycle unless a specific cycle_id is provided.
+    """
     conn = get_connection()
-    query = """
+    base_query = """
         SELECT fr.request_id, fr.relationship_type, fr.completed_at,
                fq.question_text, fres.response_value, fres.rating_value, fq.question_type
         FROM feedback_requests fr
         JOIN feedback_responses fres ON fr.request_id = fres.request_id
         JOIN feedback_questions fq ON fres.question_id = fq.question_id
         JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
-        WHERE fr.requester_id = ? 
-            AND fr.workflow_state = 'completed'
-            AND rc.is_active = 1
-        ORDER BY fr.request_id, fq.sort_order ASC
+        WHERE fr.requester_id = ?
+          AND fr.workflow_state = 'completed'
     """
+    params = [user_id]
+    if cycle_id:
+        base_query += " AND fr.cycle_id = ?"
+        params.append(cycle_id)
+    else:
+        base_query += " AND rc.is_active = 1"
+    base_query += " ORDER BY fr.request_id, fq.sort_order ASC"
     try:
-        result = conn.execute(query, (user_id,))
+        result = conn.execute(base_query, tuple(params))
         feedback_groups = {}
         for row in result.fetchall():
             request_id = row[0]
@@ -1122,9 +1329,47 @@ def get_feedback_progress_for_user(user_id):
         logger.error(f"Error fetching feedback progress: {e}")
         return {'total_requests': 0, 'completed_requests': 0, 'pending_requests': 0, 'awaiting_approval': 0}
 
-def generate_feedback_excel_data(user_id):
+def get_feedback_by_cycle(user_id, cycle_id=None):
+    """Get user's feedback results filtered by cycle."""
+    conn = get_connection()
+    query = """
+        SELECT fr.request_id, fr.reviewer_id, fr.relationship_type, fr.workflow_state,
+               fr.submitted_at, fr.cycle_id, rc.cycle_display_name,
+               u.first_name, u.last_name
+        FROM feedback_requests fr
+        JOIN users u ON fr.reviewer_id = u.user_type_id
+        LEFT JOIN review_cycles rc ON fr.cycle_id = rc.cycle_id
+        WHERE fr.requester_id = ? AND fr.workflow_state = 'completed'
+    """
+    params = [user_id]
+    if cycle_id:
+        query += " AND fr.cycle_id = ?"
+        params.append(cycle_id)
+    
+    query += " ORDER BY fr.submitted_at DESC"
+    
+    try:
+        result = conn.execute(query, tuple(params))
+        feedback_list = []
+        for row in result.fetchall():
+            feedback_list.append({
+                'request_id': row[0],
+                'reviewer_id': row[1],
+                'relationship_type': row[2],
+                'status': row[3],
+                'submitted_at': row[4],
+                'cycle_id': row[5],
+                'cycle_name': row[6],
+                'reviewer_name': f"{row[7]} {row[8]}".strip()
+            })
+        return feedback_list
+    except Exception as e:
+        logger.error(f"Error fetching feedback by cycle: {e}")
+        return []
+
+def generate_feedback_excel_data(user_id, cycle_id=None):
     """Generate Excel-ready data for a user's feedback."""
-    feedback_data = get_anonymized_feedback_for_user(user_id)
+    feedback_data = get_anonymized_feedback_for_user(user_id, cycle_id)
     
     excel_rows = []
     
@@ -1634,14 +1879,22 @@ def get_pending_reviewer_requests(user_id):
         
         requests = []
         for row in result.fetchall():
+            first_name = row[4] or ""
+            last_name = row[5] or ""
+            requester_name = f"{first_name.strip()} {last_name.strip()}".strip() or "Unknown"
+            vertical = (row[6] or "Unknown").strip() if isinstance(row[6], str) else "Unknown"
+            designation = (row[7] or "Unknown").strip() if isinstance(row[7], str) else "Unknown"
+
             requests.append({
                 'request_id': row[0],
                 'requester_id': row[1],
                 'relationship_type': row[2],
                 'created_at': row[3],
-                'requester_name': f"{row[4]} {row[5]}",
-                'vertical': row[6],
-                'designation': row[7],
+                'requester_name': requester_name,
+                'requester_vertical': vertical,
+                'requester_designation': designation,
+                'vertical': vertical,
+                'designation': designation,
                 'cycle_name': row[8],
                 'deadline': row[9]
             })
@@ -1911,11 +2164,15 @@ def process_external_stakeholder_invitations(request_id):
             try:
                 from services.email_service import send_external_stakeholder_invitation
                 send_external_stakeholder_invitation(
-                    external_email=request_data[0],
-                    external_name=f"{request_data[7] or ''} {request_data[8] or ''}".strip() or request_data[0],
-                    requester_name=f"{request_data[3]} {request_data[4]}",
+                    to_email=request_data[0],
+                    requester_name=f"{request_data[3]} {request_data[4]}".strip(),
+                    requester_vertical=request_data[5] or "",
                     cycle_name=request_data[6],
-                    token=token
+                    token=token,
+                    external_stakeholder_name=(
+                        f"{request_data[7] or ''} {request_data[8] or ''}".strip()
+                        or request_data[0]
+                    ),
                 )
                 return True, "Invitation sent successfully"
             except Exception as e:
@@ -1953,6 +2210,34 @@ def _wf_should_count(workflow_state: str) -> bool:
         "in_progress",
         "completed",
     }
+
+def _wf_get_reviewer_status_label(workflow_state: str, approval_status: str, reviewer_status: str) -> str:
+    """Human readable reviewer status messaging for nominations"""
+    state = (workflow_state or "").lower()
+    approval = (approval_status or "").lower()
+    reviewer = (reviewer_status or "").lower()
+    
+    label_map = {
+        "pending_manager_approval": "Waiting for manager approval",
+        "pending_reviewer_acceptance": "Waiting for reviewer approval",
+        "in_progress": "In progress",
+        "completed": "Completed",
+        "manager_rejected": "Rejected by manager",
+        "reviewer_rejected": "Rejected by reviewer",
+        "expired": "Expired",
+    }
+    
+    if state in label_map:
+        return label_map[state]
+    
+    if approval == "pending":
+        return "Waiting for manager approval"
+    if approval == "approved" and reviewer in ("pending", "pending_acceptance", ""):
+        return "Waiting for reviewer approval"
+    if reviewer in ("accepted", "in_progress"):
+        return "In progress"
+    
+    return "Pending"
 
 def is_deadline_passed(deadline_date):
     """Check if a deadline has passed."""
@@ -2408,8 +2693,106 @@ def create_new_review_cycle(cycle_name, nomination_start, nomination_deadline, f
             return False
 
 
+def update_cycle_deadlines(cycle_id, nomination_deadline, feedback_deadline):
+    """Update deadlines for an existing cycle - Updated to remove approval and results deadlines."""
+    with get_connection() as conn:
+        try:
+            update_query = """
+                UPDATE review_cycles 
+                SET nomination_deadline = ?, 
+                    feedback_deadline = ?
+                WHERE cycle_id = ? AND is_active = 1
+            """
+            result = conn.execute(update_query, (
+                nomination_deadline, feedback_deadline, cycle_id
+            ))
+            
+            # Verify the update worked by checking if any rows were affected
+            verify_result = conn.execute("SELECT cycle_id FROM review_cycles WHERE cycle_id = ? AND is_active = 1", (cycle_id,))
+            if verify_result.fetchone():
+                logger.info(f"Cycle deadlines updated successfully for cycle {cycle_id}")
+                conn.commit()
+                return True
+            else:
+                logger.warning(f"No active cycle found with ID {cycle_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating cycle deadlines: {e}")
+            return False
+
+
+def create_user_deadline_extension_table():
+    """Create the user deadline extensions table if it doesn't exist."""
+    with get_connection() as conn:
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_deadline_extensions (
+                    extension_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cycle_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    deadline_type TEXT NOT NULL CHECK (deadline_type IN ('nomination', 'feedback')),
+                    original_deadline DATE NOT NULL,
+                    extended_deadline DATE NOT NULL,
+                    reason TEXT,
+                    extended_by INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (cycle_id) REFERENCES review_cycles(cycle_id),
+                    FOREIGN KEY (user_id) REFERENCES users(user_type_id),
+                    FOREIGN KEY (extended_by) REFERENCES users(user_type_id),
+                    UNIQUE(cycle_id, user_id, deadline_type)
+                )
+            """)
+            conn.commit()
+            logger.info("User deadline extensions table created/verified successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Error creating user deadline extensions table: {e}")
+            return False
+
+
 def handle_reviewer_response(request_id, reviewer_id, action, rejection_reason=None):
     """
     Handle reviewer response - wrapper for reviewer_accept_reject_request for compatibility
     """
     return reviewer_accept_reject_request(request_id, reviewer_id, action, rejection_reason)
+
+def handle_reviewer_response_OLD(request_id, reviewer_id, action, rejection_reason=None):
+    """Legacy reviewer response helper retained for compatibility."""
+    conn = get_connection()
+    try:
+        if action == 'accept':
+            conn.execute("""
+                UPDATE feedback_requests 
+                SET reviewer_status = 'accepted', reviewer_response_date = CURRENT_TIMESTAMP
+                WHERE request_id = ? AND reviewer_id = ?
+            """, (request_id, reviewer_id))
+        
+        elif action == 'reject':
+            if not rejection_reason or not rejection_reason.strip():
+                return False, "Rejection reason is required"
+            
+            conn.execute("""
+                UPDATE feedback_requests 
+                SET reviewer_status = 'rejected', reviewer_response_date = CURRENT_TIMESTAMP,
+                    reviewer_rejection_reason = ?
+                WHERE request_id = ? AND reviewer_id = ?
+            """, (rejection_reason.strip(), request_id, reviewer_id))
+            
+            conn.execute("""
+                UPDATE reviewer_nominations 
+                SET nomination_count = CASE 
+                    WHEN nomination_count > 0 THEN nomination_count - 1 
+                    ELSE 0 
+                END,
+                last_updated = CURRENT_TIMESTAMP
+                WHERE reviewer_id = ?
+            """, (reviewer_id,))
+        
+        conn.commit()
+        return True, "Response recorded successfully"
+    
+    except Exception as e:
+        logger.error(f"Error handling legacy reviewer response: {e}")
+        conn.rollback()
+        return False, str(e)

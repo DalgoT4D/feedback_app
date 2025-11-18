@@ -42,7 +42,7 @@ else:
 
             with cols[1]:
                 if st.button(
-                    f"[Accept] Accept",
+                    f"Accept",
                     key=f"accept_{request['request_id']}",
                     type="primary",
                 ):
@@ -51,7 +51,7 @@ else:
                     )
                     if success:
                         st.success(
-                            "[Accepted] Request accepted! You can now complete the feedback."
+                            "Request accepted! You can now complete the feedback."
                         )
 
                         # Check if this was the last pending reviewer request
@@ -61,16 +61,14 @@ else:
                         if (
                             len(remaining_requests) <= 1
                         ):  # Account for just-accepted request
-                            update_local_badge("reviews", completed=True)
+                            update_local_badge("review_requests", completed=True)
 
                         st.rerun()
                     else:
                         st.error(f"Error: {message}")
 
             with cols[2]:
-                if st.button(
-                    f"[Decline] Decline", key=f"decline_{request['request_id']}"
-                ):
+                if st.button(f"Decline", key=f"decline_{request['request_id']}"):
                     st.session_state[f"show_decline_{request['request_id']}"] = True
 
             # Show decline reason form if user clicked decline
@@ -113,7 +111,9 @@ else:
                                 if (
                                     len(remaining_requests) <= 1
                                 ):  # Account for just-declined request
-                                    update_local_badge("reviews", completed=True)
+                                    update_local_badge(
+                                        "review_requests", completed=True
+                                    )
 
                                 # Clear the form state
                                 if (

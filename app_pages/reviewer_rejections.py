@@ -85,7 +85,7 @@ else:
     # Display rejections
     for rejection in filtered_rejections:
         with st.expander(
-            f"[Rejected] {rejection['reviewer_name']} declined {rejection['requester_name']} - {rejection['rejection_date'][:10] if rejection['rejection_date'] else 'N/A'}"
+            f" {rejection['reviewer_name']} declined {rejection['requester_name']} - {rejection['rejection_date'][:10] if rejection['rejection_date'] else 'N/A'}"
         ):
 
             col1, col2 = st.columns([2, 1])

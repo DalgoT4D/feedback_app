@@ -151,7 +151,6 @@ else:
 
                 st.divider()
 
-    st.markdown("---")
     st.subheader("Approval Guidelines")
 
     with st.expander("[Guidelines] What to consider when approving nominations"):
@@ -178,10 +177,10 @@ else:
 
     # Show notification about external stakeholders
     st.info(
-        "[Info] **Note:** Only manager-level employees and above can request feedback from external stakeholders. The system automatically enforces this rule."
+        "**Note:** Only manager-level employees and above can request feedback from external stakeholders. The system automatically enforces this rule."
     )
 
     if pending_approvals:
         st.warning(
-            "[Action] **Action Required:** Please review and approve/reject these nominations promptly to keep the feedback process on track."
+            "**Action Required:** Please review and approve/reject these nominations promptly to keep the feedback process on track."
         )

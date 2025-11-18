@@ -1,12 +1,15 @@
 import streamlit as st
-import pandas as pd
-from io import BytesIO
-from datetime import datetime
 from services.db_helper import (
     get_direct_reports,
     get_anonymized_feedback_for_user,
     get_feedback_progress_for_user,
     generate_feedback_excel_data,
+)
+from app_pages.components.feedback_display import (
+    ensure_feedback_styles,
+    render_rating_card,
+    render_text_card,
+    build_feedback_excel,
 )
 
 st.title("Reportees' Feedback (Anonymized)")
@@ -49,20 +52,21 @@ with col3:
 
 # Export anonymized feedback
 if progress['completed_requests'] > 0:
-    if st.button("Download Reportee Feedback (Excel)", type="primary"):
-        excel_data = generate_feedback_excel_data(reportee['user_type_id'])
-        if excel_data:
-            df = pd.DataFrame(excel_data)
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, sheet_name='Reportee_Feedback', index=False)
-            output.seek(0)
-            st.download_button(
-                label="Download Excel File",
-                data=output.getvalue(),
-                file_name=f"reportee_feedback_{reportee['user_type_id']}_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+    excel_rows = generate_feedback_excel_data(reportee['user_type_id'])
+    excel_bytes, excel_filename = build_feedback_excel(
+        excel_rows,
+        f"reportee_feedback_{reportee['user_type_id']}",
+        sheet_name="Reportee_Feedback",
+    )
+    if excel_bytes:
+        st.download_button(
+            label="Download Reportee Feedback (Excel)",
+            data=excel_bytes,
+            file_name=excel_filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True,
+        )
 
 st.markdown("---")
 st.subheader("Anonymized Responses")
@@ -71,17 +75,14 @@ st.info("Reviewer identities are hidden. Only relationship type is shown.")
 feedback_data = get_anonymized_feedback_for_user(reportee['user_type_id'])
 
 if feedback_data:
+    ensure_feedback_styles()
     for i, (request_id, feedback) in enumerate(feedback_data.items(), 1):
         with st.expander(f"Review #{i} - {feedback['relationship_type'].replace('_', ' ').title()}"):
             st.write(f"Completed: {feedback['completed_at']}")
             for response in feedback['responses']:
-                st.markdown(f"**{response['question_text']}**")
                 if response['question_type'] == 'rating':
-                    rating = response['rating_value']
-                    stars = "*" * rating + "-" * (5 - rating)
-                    st.write(f"{stars} ({rating}/5)")
+                    render_rating_card(response['question_text'], response['rating_value'])
                 else:
-                    st.write(response['response_value'] or "*No response provided*")
-                st.write("")
+                    render_text_card(response['question_text'], response['response_value'])
 else:
     st.info("No completed feedback available yet for this reportee.")

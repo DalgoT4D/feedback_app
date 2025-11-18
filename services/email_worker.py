@@ -15,7 +15,7 @@ from datetime import datetime
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from services.db_helper import get_connection, create_email_queue_table
+from services.db_helper import get_connection
 from services.email_service import _send_email_sync
 import logging
 
@@ -103,9 +103,6 @@ def mark_email_processed(email_id, success, error_message=None):
 def process_email_queue():
     """Process exactly 50 pending emails from the queue."""
     logger.info("Starting email queue processing (max 50 emails)...")
-    
-    # Ensure the table exists
-    create_email_queue_table()
     
     pending_emails = get_pending_emails(50)
     

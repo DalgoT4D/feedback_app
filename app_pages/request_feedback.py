@@ -331,9 +331,22 @@ for reviewer_identifier, relationship_type in selected_reviewers:
             continue
         seen_internal.add(reviewer_identifier)
     else:
-        normalized_email = reviewer_identifier.strip().lower()
+        if isinstance(reviewer_identifier, dict):
+            normalized_email = reviewer_identifier.get("email", "").strip().lower()
+            display_label = reviewer_identifier.get("email", "External reviewer")
+        else:
+            normalized_email = str(reviewer_identifier).strip().lower()
+            display_label = str(reviewer_identifier).strip()
+
+        if not normalized_email:
+            st.warning(
+                "One of the selected external stakeholders is missing an email address. "
+                "Please re-enter their details."
+            )
+            continue
+
         if normalized_email in seen_external:
-            duplicate_labels.append(reviewer_identifier.strip())
+            duplicate_labels.append(display_label)
             continue
         seen_external.add(normalized_email)
     deduped_reviewers.append((reviewer_identifier, relationship_type))
@@ -370,19 +383,30 @@ else:
     reviewer_identifiers = [
         reviewer[0] for reviewer in selected_reviewers
     ]  # Extract just the identifiers
-    relationships_with_preview = get_relationship_with_preview(
-        current_user_id, reviewer_identifiers
-    )
+    internal_reviewer_ids = [
+        reviewer_id for reviewer_id in reviewer_identifiers if isinstance(reviewer_id, int)
+    ]
+    if internal_reviewer_ids:
+        relationships_with_preview = get_relationship_with_preview(
+            current_user_id, internal_reviewer_ids
+        )
+    else:
+        relationships_with_preview = []
 
     # Merge in external selections that won't be returned by relationship mapper
     external_pairs = [
         (rid, rtype) for (rid, rtype) in selected_reviewers if not isinstance(rid, int)
     ]
     # Build combined list, preserving mapped internal relationships
-    mapped_ids = set(rid for (rid, _rtype) in relationships_with_preview)
+    mapped_ids = {
+        rid for (rid, _rtype) in relationships_with_preview if isinstance(rid, int)
+    }
     combined_pairs = list(relationships_with_preview)
     for rid, rtype in external_pairs:
-        if rid not in mapped_ids:
+        if isinstance(rid, int):
+            if rid not in mapped_ids:
+                combined_pairs.append((rid, rtype))
+        else:
             combined_pairs.append((rid, "external_stakeholder"))
 
     # Show summary with relationships (internal mapped; externals explicit)
@@ -432,92 +456,12 @@ else:
             st.error(f"Error submitting requests: {message}")
 
 st.markdown("---")
-
-
-# Show existing nominations
-if existing_nominations:
-    st.subheader(f"Your Current Nominations ({total_nominations}/4)")
-    for nomination in existing_nominations:
-        # Get relationship icon
-        relationship_type = nomination["relationship_type"]
-
-        with st.expander(
-            f"{nomination['reviewer_name']} - {nomination['relationship_type'].replace('_', ' ').title()}"
-        ):
-            cols = st.columns([2, 1, 1])
-            with cols[0]:
-                st.write(f"**Name:** {nomination['reviewer_name']}")
-                st.write(f"**Designation:** {nomination['designation']}")
-                if nomination["vertical"] != "External":
-                    st.write(f"**Vertical:** {nomination['vertical']}")
-                st.write(
-                    f"**Relationship:** {nomination['relationship_type'].replace('_', ' ').title()}"
-                )
-            with cols[1]:
-                if nomination["approval_status"] == "pending":
-                    st.warning("Pending Approval")
-                elif nomination["approval_status"] == "approved":
-                    st.success("Approved")
-            with cols[2]:
-                if nomination["status"] == "completed":
-                    st.success("Completed")
-                elif nomination["status"] == "approved":
-                    st.info("In Progress")
-                else:
-                    st.info("Pending")
-            st.caption(f"Nominated on: {nomination['created_at'][:10]}")
-
-# Show rejected nominations
-if rejected_nominations:
-    st.subheader("Rejected Nominations")
-    st.warning(
-        "Your manager has rejected some of your nominations. You can nominate different reviewers for the remaining slots."
-    )
-
-    for rejection in rejected_nominations:
-        # Determine rejection type and source
-        if rejection["workflow_state"] == "manager_rejected":
-            rejection_by = "Rejected by Manager"
-            rejection_reason = rejection.get("rejection_reason", "No reason provided")
-        elif rejection["workflow_state"] == "reviewer_rejected":
-            rejection_by = "Rejected by Nominee"
-            rejection_reason = rejection.get(
-                "reviewer_rejection_reason", "No reason provided"
-            )
-        else:
-            rejection_by = "REJECTED"
-            rejection_reason = "Unknown reason"
-
-        with st.expander(
-            f" {rejection['reviewer_name']} - {rejection['relationship_type'].replace('_', ' ').title()} ({rejection_by})",
-            expanded=False,
-        ):
-            cols = st.columns([2, 1])
-            with cols[0]:
-                st.write(f"**Name:** {rejection['reviewer_name']}")
-                st.write(f"**Designation:** {rejection['designation']}")
-                if rejection["vertical"] != "External":
-                    st.write(f"**Vertical:** {rejection['vertical']}")
-                st.write(
-                    f"**Relationship:** {rejection['relationship_type'].replace('_', ' ').title()}"
-                )
-                if rejection_reason and rejection_reason != "No reason provided":
-                    st.error(f"**Rejection Reason:** {rejection_reason}")
-                else:
-                    st.error("**Rejection Reason:** No specific reason provided")
-            with cols[1]:
-                st.error("Rejected by Manager")
-            st.caption(f"Nominated on: {rejection['created_at'][:10]}")
-
-    if remaining_slots > 0:
-        st.info(
-            f"You can nominate **{remaining_slots} more reviewer{'s' if remaining_slots > 1 else ''}** for this cycle."
-        )
-    else:
-        st.success("You've nominated the maximum of 4 reviewers for this cycle!")
-        st.stop()
-else:
-    st.info("You can nominate up to 4 reviewers total.")
+st.subheader("Need to review your current nominations?")
+st.caption(
+    "Visit the Current Nominations page for a detailed view of every reviewer you've already nominated."
+)
+if st.button("Open Current Nominations", type="secondary"):
+    st.switch_page("app_pages/current_nominations.py")
 
 st.markdown("---")
 

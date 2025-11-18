@@ -171,7 +171,7 @@ with col2:
                 "The feedback deadline has passed. You can no longer fill out feedback forms."
             )
         else:
-            st.switch_page("app_pages/provide_feedback.py")
+            st.switch_page("app_pages/my_reviews.py")
 
 with col3:
     if st.button("📄 View My Results", use_container_width=True):
@@ -232,7 +232,7 @@ if pending_reviewer_requests or pending_reviews:
                             "The feedback deadline has passed. You can no longer fill out feedback forms."
                         )
                     else:
-                        st.switch_page("app_pages/provide_feedback.py")
+                        st.switch_page("app_pages/my_reviews.py")
 
         if len(pending_reviews) > 3:
             st.info(

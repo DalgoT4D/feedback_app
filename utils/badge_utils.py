@@ -17,7 +17,7 @@ def clear_badge_cache():
 
 def update_local_badge(action_type: str, completed: bool = True):
     """Update local badge state immediately without DB calls.
-    action_type: 'nominations', 'approvals', 'reviews'
+    action_type: 'nominations', 'approvals', 'review_requests', 'feedback_forms'
     completed: True if action is complete (removes badge), False if action needed (adds badge)
     """
     user_data = st.session_state.get("user_data", {})
@@ -59,7 +59,11 @@ def get_smart_badge_status(user_id):
     # Check local state for immediate feedback
     has_incomplete_nominations = True
     has_incomplete_approvals = True 
-    has_incomplete_reviews = True
+    has_pending_reviewer_requests = True
+    has_pending_feedback_forms = True
+    
+    pending_requests = None
+    pending_reviews = None
     
     # Override with local state if available
     if "nominations" in local_actions:
@@ -82,19 +86,33 @@ def get_smart_badge_status(user_id):
         except:
             has_incomplete_approvals = False
     
-    if "reviews" in local_actions:
-        has_incomplete_reviews = not local_actions["reviews"]["completed"]
+    if "review_requests" in local_actions:
+        has_pending_reviewer_requests = not local_actions["review_requests"]["completed"]
     else:
         # Fallback to DB check only if no local state
         try:
             pending_requests = get_pending_reviewer_requests(user_id)
-            pending_reviews = get_pending_reviews_for_user(user_id)
-            has_incomplete_reviews = len(pending_requests) > 0 or len(pending_reviews) > 0
+            has_pending_reviewer_requests = len(pending_requests) > 0
         except:
-            has_incomplete_reviews = False
+            has_pending_reviewer_requests = False
+    
+    if "feedback_forms" in local_actions:
+        has_pending_feedback_forms = not local_actions["feedback_forms"]["completed"]
+    elif "reviews" in local_actions:
+        # Backward compatibility with previous key name
+        has_pending_feedback_forms = not local_actions["reviews"]["completed"]
+    else:
+        try:
+            pending_reviews = get_pending_reviews_for_user(user_id)
+            has_pending_feedback_forms = len(pending_reviews) > 0
+        except:
+            has_pending_feedback_forms = False
     
     return {
         "has_incomplete_nominations": has_incomplete_nominations,
         "has_incomplete_approvals": has_incomplete_approvals,
-        "has_incomplete_reviews": has_incomplete_reviews
+        "has_pending_reviewer_requests": has_pending_reviewer_requests,
+        "has_pending_feedback_forms": has_pending_feedback_forms,
+        # Legacy key kept for compatibility
+        "has_incomplete_reviews": has_pending_reviewer_requests or has_pending_feedback_forms,
     }

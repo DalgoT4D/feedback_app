@@ -1,14 +1,15 @@
 import streamlit as st
-import pandas as pd
-from datetime import datetime
-from io import BytesIO
 from services.db_helper import (
     get_anonymized_feedback_for_user, 
     get_feedback_progress_for_user,
     generate_feedback_excel_data,
     get_active_review_cycle,
-    get_all_cycles,
-    get_feedback_by_cycle
+)
+from app_pages.components.feedback_display import (
+    ensure_feedback_styles,
+    render_rating_card,
+    render_text_card,
+    build_feedback_excel,
 )
 
 st.title("Current Feedback Results")
@@ -37,48 +38,30 @@ with col3:
     st.metric("Awaiting Approval", progress['awaiting_approval'])
 
 # Download Excel section
+excel_rows = []
+excel_bytes = None
+excel_filename = None
 if progress['completed_requests'] > 0:
     st.subheader("Export Your Feedback")
-    
-    if st.button("Download My Feedback (Excel)", type="primary"):
-        excel_data = generate_feedback_excel_data(user_id)
-        
-        if excel_data:
-            df = pd.DataFrame(excel_data)
-            
-            # Create Excel file in memory
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, sheet_name='My_Feedback', index=False)
-                
-                # Auto-adjust column widths
-                worksheet = writer.sheets['My_Feedback']
-                for column in worksheet.columns:
-                    max_length = 0
-                    column = [cell for cell in column]
-                    for cell in column:
-                        try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
-                            pass
-                    adjusted_width = min(max_length + 2, 50)
-                    worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
-            
-            output.seek(0)
-            
-            st.download_button(
-                label="Download Excel File",
-                data=output.getvalue(),
-                file_name=f"my_feedback_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            st.success("Excel file ready for download!")
+    excel_rows = generate_feedback_excel_data(user_id)
+    excel_bytes, excel_filename = build_feedback_excel(
+        excel_rows, f"my_feedback_{user_id}", sheet_name="My_Feedback"
+    )
+    if excel_bytes:
+        st.download_button(
+            label="Download My Feedback (Excel)",
+            data=excel_bytes,
+            file_name=excel_filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True,
+        )
 
 # Display anonymized feedback
 feedback_data = get_anonymized_feedback_for_user(user_id)
 
 if feedback_data:
+    ensure_feedback_styles()
     st.subheader("Feedback Results (Anonymized)")
     st.info("All feedback is anonymized - you cannot see who provided each review.")
     
@@ -90,19 +73,10 @@ if feedback_data:
             st.markdown("**Responses:**")
             
             for response in feedback['responses']:
-                st.markdown(f"**{response['question_text']}**")
-                
                 if response['question_type'] == 'rating':
-                    rating = response['rating_value']
-                    stars = "*" * rating + "-" * (5 - rating)
-                    st.write(f"{stars} ({rating}/5)")
+                    render_rating_card(response['question_text'], response['rating_value'])
                 else:
-                    if response['response_value']:
-                        st.write(f"Response: {response['response_value']}")
-                    else:
-                        st.write("*No response provided*")
-                
-                st.write("")
+                    render_text_card(response['question_text'], response['response_value'])
 else:
     if progress['total_requests'] == 0:
         st.info("You haven't requested any feedback yet. Use the 'Request Feedback' page to get started!")
@@ -124,4 +98,4 @@ st.write("""
 """)
 
 if progress['pending_requests'] > 0:
-    st.info(f"You have {progress['pending_requests']} pending responses. You can send anonymous reminders from the 'Reviews to Complete' page.")
+    st.info(f"You have {progress['pending_requests']} pending responses. You can send anonymous reminders from the 'Provide Feedback' page.")

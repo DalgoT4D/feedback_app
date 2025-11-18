@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 from datetime import datetime, date, timedelta
 from services.db_helper import (
     get_connection, 
@@ -157,51 +158,50 @@ st.subheader("Completion Progress Visualization")
 
 if active_cycle:
     try:
-        # Create completion funnel
-        funnel_data = {
-            'Stage': [
-                'Total Users',
-                'Nominated 4 Users', 
-                'Had 4 Approved',
-                'Approved 4 Reviews',
-                'Given 4 Feedback',
-                'Received 4 Feedback',
-                'Completed Everything'
-            ],
-            'Count': [
-                total_users,
-                nominated_4_users,
-                had_4_approved,
-                approved_4_reviewers,
-                given_4_feedback,
-                received_4_feedback,
-                completed_everything
-            ],
-            'Percentage': [
-                100,
-                (nominated_4_users/total_users*100) if total_users > 0 else 0,
-                (had_4_approved/total_users*100) if total_users > 0 else 0,
-                (approved_4_reviewers/total_users*100) if total_users > 0 else 0,
-                (given_4_feedback/total_users*100) if total_users > 0 else 0,
-                (received_4_feedback/total_users*100) if total_users > 0 else 0,
-                (completed_everything/total_users*100) if total_users > 0 else 0
-            ]
-        }
+        # Create completion funnel in specified order
+        funnel_stages = [
+            ("Total Users", total_users),
+            ("Nominated 4", nominated_4_users),
+            ("Had 4 Approved", had_4_approved),
+            ("Received 4 Feedback", received_4_feedback),
+            ("Approved 4 Reviews", approved_4_reviewers),
+            ("Given 4 Feedback", given_4_feedback),
+            ("Completed Everything", completed_everything),
+        ]
+        funnel_df = pd.DataFrame(
+            {
+                "Stage": [stage for stage, _ in funnel_stages],
+                "Count": [count for _, count in funnel_stages],
+            }
+        )
+        if total_users > 0:
+            funnel_df["Percentage"] = (funnel_df["Count"] / total_users) * 100
+        else:
+            funnel_df["Percentage"] = 0.0
         
-        funnel_df = pd.DataFrame(funnel_data)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Completion Funnel:**")
-            st.bar_chart(funnel_df.set_index('Stage')['Count'])
-        
-        with col2:
-            st.write("**Percentage Breakdown:**")
-            for _, row in funnel_df.iterrows():
-                progress_val = row['Percentage'] / 100
-                st.write(f"**{row['Stage']}:** {row['Count']} users ({row['Percentage']:.1f}%)")
-                st.progress(progress_val)
+        st.write("**Completion Funnel:**")
+        funnel_chart = (
+            alt.Chart(funnel_df)
+            .mark_bar(color="#1E4796")
+            .encode(
+                x=alt.X(
+                    "Stage:N",
+                    sort=[stage for stage, _ in funnel_stages],
+                    axis=alt.Axis(labelAngle=0, title="Stage"),
+                ),
+                y=alt.Y("Count:Q", axis=alt.Axis(title="Users")),
+            )
+            .properties(height=320)
+        )
+        st.altair_chart(funnel_chart, use_container_width=True)
+
+        st.write("**Percentage Breakdown:**")
+        for _, row in funnel_df.iterrows():
+            progress_val = (row["Percentage"] / 100) if total_users > 0 else 0
+            st.write(
+                f"**{row['Stage']}:** {row['Count']} users ({row['Percentage']:.1f}%)"
+            )
+            st.progress(progress_val)
 
     except Exception as e:
         st.error(f"Error creating progress visualization: {e}")

@@ -76,30 +76,35 @@ def get_sender_email():
 
 
 def log_email_sent(
-    to_email: str, 
-    subject: str, 
-    email_type: str, 
-    success: bool, 
+    to_email: str,
+    subject: str,
+    email_type: str,
+    success: bool,
     error_msg: str = None,
     recipient_name: str = None,
     cycle_id: int = None,
     request_id: int = None,
-    initiated_by: int = None
+    initiated_by: int = None,
 ):
     """Enhanced email logging to the new email_logs structure."""
     try:
         # Use centralized email logging service
         from .email_logging import log_email_enhanced, log_email_recipient_details
-        
+
         # Determine status based on success
         status = "sent" if success else "failed"
-        
+
         # Categorize email type - automation emails are system-generated
-        if email_type in ['external_stakeholder_invite', 'manager_approval_notification', 'reviewer_acceptance', 'feedback_reminder']:
-            email_category = 'automation'
+        if email_type in [
+            "external_stakeholder_invite",
+            "manager_approval_notification",
+            "reviewer_acceptance",
+            "feedback_reminder",
+        ]:
+            email_category = "automation"
         else:
-            email_category = 'targeted'
-        
+            email_category = "targeted"
+
         # Log the email using centralized service
         log_id = log_email_enhanced(
             email_type=email_type,
@@ -110,9 +115,9 @@ def log_email_sent(
             recipient_name=recipient_name or "Unknown Recipient",
             initiated_by=initiated_by,
             cycle_id=cycle_id,
-            request_id=request_id
+            request_id=request_id,
         )
-        
+
         # Log recipient details if we got a log ID back
         if log_id and to_email:
             log_email_recipient_details(
@@ -120,16 +125,19 @@ def log_email_sent(
                 user_id=initiated_by or 0,
                 email=to_email,
                 name=recipient_name or "Unknown Recipient",
-                status="delivered" if success else "failed"
+                status="delivered" if success else "failed",
             )
-        
+
     except Exception as e:
         logger.warning(f"Failed to log email with enhanced structure: {e}")
-        
+
         # Fallback to basic logging using centralized service
         try:
             from .email_logging import log_email_basic
-            log_email_basic(email_type, subject, "sent" if success else "failed", to_email)
+
+            log_email_basic(
+                email_type, subject, "sent" if success else "failed", to_email
+            )
         except Exception as fallback_e:
             logger.error(f"Even fallback email logging failed: {fallback_e}")
 
@@ -299,8 +307,8 @@ def send_external_stakeholder_invite(
 ) -> bool:
     """Send invitation email to external stakeholder with token-based access."""
 
-    # Use localhost for development, can be configured later
-    app_url = "http://localhost:8501"
+    # Use production domain
+    app_url = "https://360feedback.projecttech4dev.org"
 
     subject = f"Feedback Request from {requester_name} at Tech4Dev"
 
@@ -329,7 +337,7 @@ def send_external_stakeholder_invite(
             <h2>Hi {external_stakeholder_name if external_stakeholder_name else "there"},</h2>
             
             <p><strong>{requester_name}</strong> ({requester_designation}{f", {requester_vertical}" if requester_vertical else ""}) 
-            has requested your feedback as part of their 360-degree review at Tech4Dev.</p>
+            has requested your feedback as part of their 360° review at Tech4Dev.</p>
             
             <p>Your insights and perspective are valuable for their professional development. 
             The feedback process is anonymous and should take about 10-15 minutes to complete.</p>
@@ -380,7 +388,7 @@ def send_external_stakeholder_invite(
 
     Hi {external_stakeholder_name if external_stakeholder_name else "there"},
 
-    {requester_name} ({requester_designation}{f", {requester_vertical}" if requester_vertical else ""}) has requested your feedback as part of their 360-degree review at Tech4Dev.
+    {requester_name} ({requester_designation}{f", {requester_vertical}" if requester_vertical else ""}) has requested your feedback as part of their 360° review at Tech4Dev.
 
     Your Access Information:
     Email: {external_email}
@@ -404,15 +412,15 @@ def send_external_stakeholder_invite(
     """
 
     return send_email(
-        external_email, 
-        subject, 
-        html_body, 
-        text_body, 
+        external_email,
+        subject,
+        html_body,
+        text_body,
         "external_stakeholder_invite",
         recipient_name=external_stakeholder_name,
         cycle_id=cycle_id,
         request_id=request_id,
-        initiated_by=initiated_by
+        initiated_by=initiated_by,
     )
 
 
@@ -427,10 +435,10 @@ def send_nominee_invite(
     """Send invitation email to internal reviewer after nomination is approved."""
 
     # Use production app URL
-    app_url = "https://360feedbacktool.streamlit.app/"
+    app_url = "https://360feedback.projecttech4dev.org"
     relationship_display = relationship_type.replace("_", " ").title()
 
-    subject = "📌 360-Degree Feedback – Your Input Requested"
+    subject = "📌 360° Feedback – Your Input Requested"
 
     html_body = f"""
     <!DOCTYPE html>
@@ -515,8 +523,8 @@ def send_manager_approval_request(
 ) -> bool:
     """Send notification to manager about pending nomination approvals."""
 
-    # Use localhost for development, can be configured later
-    app_url = "http://localhost:8501"
+    # Use production domain
+    app_url = "https://360feedback.projecttech4dev.org"
 
     subject = f"Nomination Approval Required: {requester_name}'s feedback requests"
 
@@ -550,8 +558,7 @@ def send_manager_approval_request(
         <div class="content">
             <h2>Hi {manager_name},</h2>
             
-            <p><strong>{requester_name}</strong> has submitted new feedback nominations that require your approval 
-            for the <strong>{cycle_name}</strong> review cycle.</p>
+            <p><strong>{requester_name}</strong> has submitted 360° feedback nominations that require your approval.</p>
             
             <div class="nominees-box">
                 <h3>Pending Nominations:</h3>
@@ -592,7 +599,7 @@ def send_manager_approval_request(
 
     Hi {manager_name},
 
-    {requester_name} has submitted new feedback nominations that require your approval for the {cycle_name} review cycle.
+    {requester_name} has submitted new feedback nominations that require your approval.
 
     Pending Nominations:
     {nominees_list}
@@ -621,7 +628,7 @@ def send_nomination_approved(
 ) -> bool:
     """Send notification when nominations are approved by manager."""
 
-    subject = f"Feedback nominations approved for {cycle_name}"
+    subject = "Feedback nominations approved"
 
     nominees_list = "\n".join([f"• {nominee}" for nominee in approved_nominees])
 
@@ -648,8 +655,7 @@ def send_nomination_approved(
         <div class="content">
             <h2>Hi {requester_name},</h2>
             
-            <p>Great news! Your manager has approved the following feedback nominations 
-            for the <strong>{cycle_name}</strong> review cycle:</p>
+            <p>Great news! Your manager has approved the following feedback nominations.</p>
             
             <div class="success-box">
                 <h3>Approved Reviewers:</h3>
@@ -659,10 +665,12 @@ def send_nomination_approved(
             <p><strong>What happens next:</strong></p>
             <ul>
                 <li>Approved reviewers will receive invitation emails to provide feedback</li>
-                <li>You can track the progress in your "Current Feedback" dashboard</li>
+                <li>You can track the progress in your "Current Cycle Feedback" dashboard</li>
                 <li>You'll be notified by email when feedback is provided</li>
                 <li>You will be able to view your anonymized feedback on the app.</li>
             </ul>
+            
+            <p><strong>Portal:</strong> <a href="https://360feedback.projecttech4dev.org">https://360feedback.projecttech4dev.org</a></p>
             
             <p>The feedback collection process is now underway!</p>
             
@@ -688,7 +696,7 @@ def send_nomination_rejected(
 ) -> bool:
     """Send notification when nominations are rejected by manager."""
 
-    subject = f"Feedback nominations require revision for {cycle_name}"
+    subject = "Feedback nominations require revision"
 
     rejections_list = ""
     for nominee in rejected_nominees:
@@ -712,14 +720,13 @@ def send_nomination_rejected(
     <body>
         <div class="header">
             <h1>Insight 360°</h1>
-            <h2>Nominations Need Revision</h2>
+            <h2>360° Feedback Nominations Require Revision</h2>
         </div>
         
         <div class="content">
             <h2>Hi {requester_name},</h2>
             
-            <p>Your manager has reviewed your feedback nominations for the <strong>{cycle_name}</strong> 
-            review cycle and has rejected the following:</p>
+            <p>Your manager has reviewed your feedback nominations and has rejected the following:</p>
             
             <div class="rejection-box">
                 <h3>Rejected Nominations:</h3>
@@ -733,6 +740,8 @@ def send_nomination_rejected(
                 <li>Ensure nominees have sufficient working relationship with you</li>
                 <li>You can still nominate up to your remaining allocation</li>
             </ul>
+            
+            <p><strong>Portal:</strong> <a href="https://360feedback.projecttech4dev.org">https://360feedback.projecttech4dev.org</a></p>
             
             <p>Please submit replacement nominations promptly to stay on track for the feedback deadline.</p>
             
@@ -759,9 +768,8 @@ def send_feedback_submitted_notification(
 ) -> bool:
     """Send notification when feedback is submitted by a reviewer."""
 
-    reviewer_type = "external stakeholder" if is_external else "colleague"
-
-    subject = f"Feedback received from {reviewer_type} for {cycle_name}"
+    # Use generic subject since feedback is anonymized
+    subject = "Feedback received"
 
     html_body = f"""
     <!DOCTYPE html>
@@ -769,38 +777,38 @@ def send_feedback_submitted_notification(
     <head>
         <style>
             body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-            .header {{ background-color: #17a2b8; color: white; padding: 20px; text-align: center; }}
+            .header {{ background-color: #1E4796; color: white; padding: 20px; text-align: center; }}
+            .header h1 {{ margin: 0; font-size: 24px; }}
+            .header h2 {{ margin: 5px 0 0 0; font-size: 18px; opacity: 0.9; }}
             .content {{ padding: 20px; }}
-            .info-box {{ background-color: #f0f8ff; padding: 15px; border-left: 4px solid #17a2b8; margin: 20px 0; }}
+            .info-box {{ background-color: #f0f8ff; padding: 15px; border-left: 4px solid #1E4796; margin: 20px 0; }}
             .footer {{ background-color: #f0f0f0; padding: 10px; text-align: center; font-size: 12px; }}
         </style>
     </head>
     <body>
         <div class="header">
             <h1>Insight 360°</h1>
-            <h2>Feedback Received 📝</h2>
+            <h2>360° Feedback Received</h2>
         </div>
         
         <div class="content">
             <h2>Hi {requester_name},</h2>
             
-            <p>Good news! You have received feedback from <strong>{reviewer_name}</strong> 
-            ({reviewer_type}) for your <strong>{cycle_name}</strong> review cycle.</p>
+            <p>Good news! You have received feedback!</p>
             
             <div class="info-box">
                 <h3>Progress Update:</h3>
-                <p>Another reviewer has completed their feedback for you. You can track your overall 
-                progress in the "Current Feedback" dashboard.</p>
+                <p>A reviewer has completed their feedback for you. You can view your anonymized feedback in the "Current Cycle Feedback" dashboard.</p>
+                <p><strong>Portal:</strong> <a href="https://360feedback.projecttech4dev.org">https://360feedback.projecttech4dev.org</a></p>
             </div>
             
             <p><strong>What's Next:</strong></p>
             <ul>
-                <li>Continue to encourage remaining reviewers to complete their feedback</li>
-                <li>Your compiled feedback report will be available after the cycle ends</li>
-                <li>All feedback will be anonymized in the final report</li>
+                <li>Continue to encourage any remaining reviewers to complete their feedback</li>
+                <li>Your anonymized feedback is available for you to review</li>
             </ul>
             
-            <p>Thank you for participating in the 360-degree feedback process!</p>
+            <p>Thank you for participating in the 360° feedback process!</p>
             
             <p>Best regards,<br>
             Talent Management</p>
@@ -834,14 +842,14 @@ def send_cycle_deadline_reminder(
     elif deadline_type == "feedback":
         subject = f"Reminder: {days_remaining} days left to complete feedback reviews"
         action = "complete your pending feedback reviews"
-        page = "Complete Reviews"
+        page = "Provide Feedback"
     else:
         subject = f"Reminder: {days_remaining} days left for feedback cycle"
         action = "complete your pending tasks"
         page = "dashboard"
 
-    # Use localhost for development, can be configured later
-    app_url = "http://localhost:8501"
+    # Use production domain
+    app_url = "https://360feedback.projecttech4dev.org"
 
     html_body = f"""
     <!DOCTYPE html>

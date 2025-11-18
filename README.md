@@ -22,7 +22,7 @@ This application facilitates a performance review process where employees receiv
 - **Rejection Handling** - clear messaging for rejected nominations with ability to nominate replacements
 - **Review Requests** - accept or decline feedback requests from colleagues with mandatory rejection reasons
 - **View Anonymized Feedback** received from others
-- **Complete Reviews** for colleagues with different question sets (only after accepting requests)
+- **Provide Feedback** for colleagues with different question sets (only after accepting requests)
 - **Excel Export** of personal feedback data
 - **Draft Saving** for incomplete reviews
 
@@ -199,8 +199,8 @@ The system automatically determines relationships based on organizational data:
    - Submit individual or groups for manager approval
    - Track remaining nomination slots
 
-2. **Complete Reviews**
-   - View pending requests in "Reviews to Complete"
+2. **Provide Feedback**
+   - View pending requests in "Provide Feedback"
    - Answer relationship-specific questions
    - Save drafts or submit final responses
 
@@ -467,7 +467,6 @@ feedback_app/
 │   ├── send_reminders.py           # HR: Reminder sending
 │   ├── manual_reminders.py         # HR: Manual targeting
 │   ├── manage_employees.py         # HR: User management
-│   ├── admin_overview.py           # HR: All reviews & requests
 │   ├── reviewer_rejections.py      # HR: Rejection tracking
 │   ├── reportees_feedback.py       # Managers: anonymized reportee feedback
 │   ├── approve_nominations.py      # Managers: approve/reject nominations

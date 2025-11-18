@@ -255,7 +255,7 @@ if st.session_state.get("authenticated"):  # Only show header if authenticated
         logo_html = f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
     except FileNotFoundError:
         logo_html = '<div style="width: 40px; height: 40px; background-color: #1E4796; border-radius: 5px;"></div>'
-    
+
     st.markdown(
         f"""
         <div class="main-header">
@@ -295,6 +295,7 @@ pages = {
     "Logout": st.Page("logout.py", title="Log out", icon=":material/logout:"),
 }
 
+
 # Role-based sections
 def _parse_date(date_value):
     """Normalize date strings/objects into date."""
@@ -308,15 +309,13 @@ def _parse_date(date_value):
     return None
 
 
-
-
 BADGES_ENABLED = False  # Temporarily disable badges to isolate navigation issues
 
 BADGES_ENABLED = True  # Re-enable lightweight badges in native sidebar
 
+
 def _badge_title(title: str, has_incomplete_actions: bool) -> str:
-    """Append badge using simple binary system - diamond for incomplete actions.
-    """
+    """Append badge using simple binary system - diamond for incomplete actions."""
     if not BADGES_ENABLED:
         return title
     if has_incomplete_actions:
@@ -334,40 +333,49 @@ if st.session_state["authenticated"]:
 
     # Use smart badge status with local state overrides - extended cache for performance
     cache_key = f"badge_status_{user_id}"
-    if cache_key not in st.session_state or st.session_state.get("badge_cache_time", 0) < (datetime.now().timestamp() - 120):
+    if cache_key not in st.session_state or st.session_state.get(
+        "badge_cache_time", 0
+    ) < (datetime.now().timestamp() - 120):
         # Get smart badge status (uses local state + fallback to DB)
         smart_status = get_smart_badge_status(user_id)
-        
+
         # Convert to page-specific badge status
         badge_status = {}
-        
+
         # Request Feedback badge - check if nominations are incomplete
         active_cycle = get_active_review_cycle()
         if user_id and active_cycle:
             nomination_deadline = _parse_date(active_cycle.get("nomination_deadline"))
             today = date.today()
             if nomination_deadline and today <= nomination_deadline:
-                badge_status["Request Feedback"] = smart_status["has_incomplete_nominations"]
+                badge_status["Request Feedback"] = smart_status[
+                    "has_incomplete_nominations"
+                ]
             else:
                 badge_status["Request Feedback"] = False
         else:
             badge_status["Request Feedback"] = False
 
         # Review-related badges
-        badge_status["Review Requests"] = smart_status["has_incomplete_reviews"]
-        badge_status["Complete Reviews"] = smart_status["has_incomplete_reviews"]
-        badge_status["Provide Feedback"] = smart_status["has_incomplete_reviews"]
+        badge_status["Review Requests"] = smart_status["has_pending_reviewer_requests"]
+        badge_status["Provide Feedback"] = smart_status["has_pending_feedback_forms"]
 
         # Approval badges for managers
-        user_manager_level = get_manager_level_from_designation(user_data.get("designation", ""))
+        user_manager_level = get_manager_level_from_designation(
+            user_data.get("designation", "")
+        )
         user_has_reports = has_direct_reports(user_data.get("email"))
         if user_manager_level >= 1 and user_has_reports:
-            badge_status["Approve Nominations"] = smart_status["has_incomplete_approvals"]
-            badge_status["Approve Team Nominations"] = smart_status["has_incomplete_approvals"]
+            badge_status["Approve Nominations"] = smart_status[
+                "has_incomplete_approvals"
+            ]
+            badge_status["Approve Team Nominations"] = smart_status[
+                "has_incomplete_approvals"
+            ]
         else:
             badge_status["Approve Nominations"] = False
             badge_status["Approve Team Nominations"] = False
-        
+
         # Cache the smart binary status
         st.session_state[cache_key] = badge_status
         st.session_state["badge_cache_time"] = datetime.now().timestamp()
@@ -386,7 +394,9 @@ if st.session_state["authenticated"]:
             "Cycle Management": [
                 st.Page(
                     "app_pages/hr_dashboard.py",
-                    title=_badge_title("Cycle Management", False),  # No badges for HR admin pages
+                    title=_badge_title(
+                        "Cycle Management", False
+                    ),  # No badges for HR admin pages
                     icon=":material/dashboard:",
                 ),
                 st.Page(
@@ -412,21 +422,14 @@ if st.session_state["authenticated"]:
                     icon=":material/feedback:",
                 ),
                 st.Page(
-                    "app_pages/data_exports.py",
-                    title=_badge_title("Data Exports", False),
-                    icon=":material/download:",
-                ),
-            ],
-            "Feedback Management": [
-                st.Page(
-                    "app_pages/admin_overview.py",
-                    title=_badge_title("All Reviews & Requests", False),
-                    icon=":material/view_list:",
-                ),
-                st.Page(
                     "app_pages/reviewer_rejections.py",
                     title=_badge_title("Reviewer Rejections", False),
                     icon=":material/block:",
+                ),
+                st.Page(
+                    "app_pages/data_exports.py",
+                    title=_badge_title("Data Exports", False),
+                    icon=":material/download:",
                 ),
             ],
             "Communication": [
@@ -451,31 +454,51 @@ if st.session_state["authenticated"]:
             "Provide Feedback": [
                 st.Page(
                     "app_pages/review_requests.py",
-                    title=_badge_title("Review Requests", badge_status.get("Review Requests", False)),
+                    title=_badge_title(
+                        "Review Requests", badge_status.get("Review Requests", False)
+                    ),
                     icon=":material/how_to_reg:",
                 ),
                 st.Page(
                     "app_pages/my_reviews.py",
-                    title=_badge_title("Reviews", badge_status.get("Complete Reviews", False)),
+                    title=_badge_title(
+                        "Provide Feedback", badge_status.get("Provide Feedback", False)
+                    ),
                     icon=":material/assignment:",
                 ),
             ],
             "Get Feedback": [
-                *([
-                    st.Page(
-                        "app_pages/request_feedback.py",
-                        title=_badge_title("Request Feedback", badge_status.get("Request Feedback", False)),
-                        icon=":material/rate_review:",
-                    )
-                ] if can_user_request_feedback(user_id) else []),
+                *(
+                    [
+                        st.Page(
+                            "app_pages/request_feedback.py",
+                            title=_badge_title(
+                                "Request Feedback",
+                                badge_status.get("Request Feedback", False),
+                            ),
+                            icon=":material/rate_review:",
+                        )
+                    ]
+                    if can_user_request_feedback(user_id)
+                    else []
+                ),
+                st.Page(
+                    "app_pages/current_nominations.py",
+                    title=_badge_title("Current Nominations", False),
+                    icon=":material/playlist_add_check:",
+                ),
                 st.Page(
                     "app_pages/current_feedback.py",
-                    title=_badge_title("Current Feedback", False),  # No action needed on this page
+                    title=_badge_title(
+                        "Current Cycle Feedback", False
+                    ),  # No action needed on this page
                     icon=":material/feedback:",
                 ),
                 st.Page(
                     "app_pages/previous_feedback.py",
-                    title=_badge_title("Previous Feedback", False),  # No action needed on this page
+                    title=_badge_title(
+                        "Previous Cycle Feedback", False
+                    ),  # No action needed on this page
                     icon=":material/history:",
                 ),
             ],
@@ -485,7 +508,10 @@ if st.session_state["authenticated"]:
             nav_sections["Cycle Management"].append(
                 st.Page(
                     "app_pages/approve_nominations.py",
-                    title=_badge_title("Approve Nominations", badge_status.get("Approve Nominations", False)),
+                    title=_badge_title(
+                        "Approve Nominations",
+                        badge_status.get("Approve Nominations", False),
+                    ),
                     icon=":material/approval:",
                 )
             )
@@ -493,7 +519,9 @@ if st.session_state["authenticated"]:
             nav_sections["Team Management"].append(
                 st.Page(
                     "app_pages/reportees_feedback.py",
-                    title=_badge_title("Reportees' Feedback", False),  # No action needed on this page
+                    title=_badge_title(
+                        "Reportees' Feedback", False
+                    ),  # No action needed on this page
                     icon=":material/people:",
                 )
             )
@@ -503,31 +531,51 @@ if st.session_state["authenticated"]:
             "Provide Feedback": [
                 st.Page(
                     "app_pages/review_requests.py",
-                    title=_badge_title("Review Requests", badge_status.get("Review Requests", False)),
+                    title=_badge_title(
+                        "Review Requests", badge_status.get("Review Requests", False)
+                    ),
                     icon=":material/how_to_reg:",
                 ),
                 st.Page(
                     "app_pages/my_reviews.py",
-                    title=_badge_title("Reviews", badge_status.get("Complete Reviews", False)),
+                    title=_badge_title(
+                        "Provide Feedback", badge_status.get("Provide Feedback", False)
+                    ),
                     icon=":material/assignment:",
                 ),
             ],
             "Get Feedback": [
-                *([
-                    st.Page(
-                        "app_pages/request_feedback.py",
-                        title=_badge_title("Request Feedback", badge_status.get("Request Feedback", False)),
-                        icon=":material/rate_review:",
-                    )
-                ] if can_user_request_feedback(user_id) else []),
+                *(
+                    [
+                        st.Page(
+                            "app_pages/request_feedback.py",
+                            title=_badge_title(
+                                "Request Feedback",
+                                badge_status.get("Request Feedback", False),
+                            ),
+                            icon=":material/rate_review:",
+                        )
+                    ]
+                    if can_user_request_feedback(user_id)
+                    else []
+                ),
+                st.Page(
+                    "app_pages/current_nominations.py",
+                    title=_badge_title("Current Nominations", False),
+                    icon=":material/playlist_add_check:",
+                ),
                 st.Page(
                     "app_pages/current_feedback.py",
-                    title=_badge_title("Current Feedback", False),  # No action needed on this page
+                    title=_badge_title(
+                        "Current Cycle Feedback", False
+                    ),  # No action needed on this page
                     icon=":material/feedback:",
                 ),
                 st.Page(
                     "app_pages/previous_feedback.py",
-                    title=_badge_title("Previous Feedback", False),  # No action needed on this page
+                    title=_badge_title(
+                        "Previous Cycle Feedback", False
+                    ),  # No action needed on this page
                     icon=":material/history:",
                 ),
             ],
@@ -536,12 +584,17 @@ if st.session_state["authenticated"]:
             nav_sections["Team Management"] = [
                 st.Page(
                     "app_pages/approve_nominations.py",
-                    title=_badge_title("Approve Team Nominations", badge_status.get("Approve Team Nominations", False)),
+                    title=_badge_title(
+                        "Approve Team Nominations",
+                        badge_status.get("Approve Team Nominations", False),
+                    ),
                     icon=":material/approval:",
                 ),
                 st.Page(
                     "app_pages/reportees_feedback.py",
-                    title=_badge_title("Reportees' Feedback", False),  # No action needed on this page
+                    title=_badge_title(
+                        "Reportees' Feedback", False
+                    ),  # No action needed on this page
                     icon=":material/people:",
                 ),
             ]

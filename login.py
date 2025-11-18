@@ -5,6 +5,7 @@ from services.db_helper import (
     accept_external_stakeholder_request,
     reject_external_stakeholder_request,
 )
+from utils.external_session import reset_external_session
 
 # Display logo with error handling
 try:
@@ -166,12 +167,12 @@ if not st.session_state["authenticated"]:
     elif st.session_state["login_type"] == "external":
         st.subheader("External Stakeholder Login")
 
-        if st.button("← Back to Login Type Selection", key="back_from_external"):
-            st.session_state["login_type"] = None
-            st.rerun()
-
         # Handle external authentication
         if not st.session_state.get("external_authenticated", False):
+            if st.button("← Return to Login", key="back_from_external"):
+                reset_external_session()
+                st.rerun()
+
             st.info(
                 "Please enter the email address and token from your invitation email."
             )
@@ -338,14 +339,9 @@ if not st.session_state["authenticated"]:
 
             st.markdown("---")
 
-            # Back to main login option
-            if st.button("← Return to Main Login", key="back_to_main_from_external"):
-                # Clear external session data
-                st.session_state["external_authenticated"] = False
-                st.session_state["external_token_data"] = None
-                st.session_state["login_type"] = None
-                if "show_rejection_form" in st.session_state:
-                    del st.session_state["show_rejection_form"]
+            # Back to login option
+            if st.button("← Return to Login", key="back_to_main_from_external"):
+                reset_external_session()
                 st.rerun()
 
     # No other login type - should not reach here
