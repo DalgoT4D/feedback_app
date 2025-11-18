@@ -2,7 +2,7 @@ streamlit
 pandas
 openpyxl
 plotly
-libsql-experimental
+turso-python
 streamlit-autorefresh
 streamlit-scroll-to-top
 bcrypt

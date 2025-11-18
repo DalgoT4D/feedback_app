@@ -419,7 +419,7 @@ External stakeholders can be nominated by employees (subject to manager approval
 
 - App entry: `main.py` defines role-based navigation and sidebar menu.
 - Authentication: `login.py` sets `st.session_state['authenticated']`, `user_data`, and roles (via `services/auth_service.py`).
-- Database: Turso (SQLite) via `libsql_experimental`. All DB helpers live in `services/db_helper.py`.
+- Database: Turso (SQLite) via `turso-python`. All DB helpers live in `services/db_helper.py`.
 - Key data model tables:
   - `users`: includes `date_of_joining` (DATE), `vertical`, `designation`, `reporting_manager_email`.
   - `review_cycles`: active cycle with `nomination_deadline`, `feedback_deadline`.
